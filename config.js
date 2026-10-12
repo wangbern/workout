@@ -17,5 +17,5 @@ window.MONSTER_CONFIG = {
   resetHour: 8,
   // Paste the Apps Script web app URL here after deploying.
   // It looks like https://script.google.com/macros/s/XXXX/exec
-  scriptUrl: "https://script.google.com/macros/s/AKfycbyPe_UCmX0cYw2afaRiaMR_XH9gFj51aMBQC4bXnGqnMO5NeJKP7YvqQ3wZi6D85NaD/exec",
+  scriptUrl: "https://script.google.com/macros/s/AKfycby3L52o553Wv0q_W7XXMMjqVBpLaFz3gYPVCMQqn_CL1b6GDH-lWVDQ77Puw-aKAm3n/exec",
 };
