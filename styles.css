@@ -1,0 +1,334 @@
+:root {
+  color-scheme: light;
+  --paper: #fff6e8;
+  --ink: #3d2c29;
+  --card: #ffffff;
+  --accent: #ff8a5b;
+  --muted: #8a7068;
+  --line: #f0e0d2;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(90% 42% at 50% -10%, #ffe3c4 0%, rgba(255, 246, 232, 0) 68%),
+    var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+button, input { font: inherit; color: inherit; }
+
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+.app {
+  width: min(100%, 480px);
+  height: 100dvh;
+  margin: 0 auto;
+  padding:
+    calc(8px + env(safe-area-inset-top))
+    calc(16px + env(safe-area-inset-right))
+    calc(6px + env(safe-area-inset-bottom))
+    calc(16px + env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.langs {
+  display: flex;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.langs button {
+  min-width: 52px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.langs button[aria-pressed="true"] {
+  background: var(--accent);
+}
+
+.screen { display: flex; flex-direction: column; }
+
+.screen[hidden] { display: none !important; }
+
+.home {
+  flex: 1;
+  gap: 6px;
+  min-height: 0;
+}
+
+.stage-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.stage {
+  width: min(100%, 250px);
+  height: 100%;
+  min-height: 0;
+}
+
+#screen-pick {
+  flex: 1;
+  align-items: stretch;
+  justify-content: center;
+  gap: 18px;
+  padding-top: 8px;
+}
+
+#screen-pick .stage {
+  height: 210px;
+  max-height: 210px;
+  margin: 0 auto;
+}
+
+.stage svg, .monster-svg {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  overflow: visible;
+  display: block;
+}
+
+.monster-name, #who {
+  margin: 0;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+#who { font-size: 28px; }
+
+.pips {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.pip {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid var(--ink);
+  background: transparent;
+}
+
+.pip.on { background: var(--accent); }
+
+.clock {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.remain {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.local-end, .both-end {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.local-end { color: var(--ink); font-weight: 700; }
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 4px 14px;
+  background: var(--card);
+  border: 3px solid var(--ink);
+  border-radius: 22px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+}
+
+.person + .person { border-top: 2px solid var(--line); }
+
+.person.is-you {
+  background: #fff1e4;
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: 14px;
+}
+
+.who-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.you-badge {
+  font-size: 12px;
+  font-weight: 800;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: var(--paper);
+}
+
+.move {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: right;
+}
+
+.move.chosen { color: #c85a32; }
+
+.status, .hint {
+  margin: 0;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.hint {
+  min-height: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.options, .choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.choices { grid-template-columns: 1fr; }
+
+.option, .choice {
+  min-height: 52px;
+  border-radius: 18px;
+  border: 3px solid var(--ink);
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.15;
+  padding: 8px;
+}
+
+.choice { min-height: 72px; font-size: 22px; }
+
+.option:active, .choice:active, .langs button:active, .linkish:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.option.is-on {
+  background: var(--accent);
+}
+
+.option:disabled {
+  opacity: 0.45;
+  transform: none;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.linkish {
+  align-self: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 18px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.stage-wrap {
+  animation: float 3.4s ease-in-out infinite;
+}
+
+.stage-wrap.acting { animation: none; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage-wrap { animation: none; }
+  .option:active, .choice:active { transform: none; }
+}
+
+@media (min-height: 820px) {
+  .option { min-height: 60px; font-size: 18px; }
+  .monster-name { font-size: 32px; }
+  .remain { font-size: 22px; }
+}
+
+@media (max-height: 700px) {
+  .person { min-height: 40px; }
+  .option { min-height: 48px; }
+  .monster-name { font-size: 24px; }
+  .remain { font-size: 18px; }
+  .local-end, .both-end { font-size: 13px; }
+}

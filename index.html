@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#FFF6E8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Monster Day">
+  <title>Monster Day</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <h1 id="title">Monster Day</h1>
+      <div class="langs" role="group" id="lang-group">
+        <button type="button" id="lang-en" aria-pressed="true">EN</button>
+        <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+      </div>
+    </header>
+
+    <section id="screen-pick" class="screen" hidden>
+      <div id="pick-stage" class="stage"></div>
+      <h2 id="who"></h2>
+      <div id="who-choices" class="choices"></div>
+    </section>
+
+    <section id="screen-home" class="screen home" hidden>
+      <div class="stage-wrap">
+        <div id="home-stage" class="stage"></div>
+      </div>
+      <h2 id="monster-name" class="monster-name"></h2>
+      <div id="pips" class="pips"></div>
+      <div class="clock">
+        <p id="remain" class="remain"></p>
+        <p id="local-end" class="local-end"></p>
+        <p id="both-end" class="both-end"></p>
+      </div>
+      <ul id="people" class="people"></ul>
+      <p id="status" class="status" aria-live="polite"></p>
+      <p id="hint" class="hint" hidden></p>
+      <div id="options" class="options"></div>
+      <button type="button" id="switch-name" class="linkish"></button>
+    </section>
+  </div>
+  <script src="config.js"></script>
+  <script src="day.js"></script>
+  <script src="monster.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
