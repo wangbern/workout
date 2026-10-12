@@ -78,6 +78,7 @@
   var decorSeq = 0;
   var decorateOpen = false;
   var drag = null;
+  var twistStray = null;
   // The title sticker is saved with the others, under this id instead of a day.
   var TITLE_ID = "title";
   var writeChain = Promise.resolve();
@@ -343,6 +344,8 @@
           nx: Number(row.nx),
           ny: Number(row.ny),
           nz: Number(row.nz),
+          rot: normRot(Number(row.rot) || 0),
+          matte: row.matte === true,
         };
         if (!isFinite(place.x) || !isFinite(place.y) || !isFinite(place.z)) return;
         if (!isFinite(place.nx) || !isFinite(place.ny) || !isFinite(place.nz)) return;
@@ -1182,13 +1185,51 @@ function consider(checkins) {
     return areas;
   }
 
+  // Shown under the trio as written, in English for both languages.
+  var RECAP_LINES = [
+    "Body-ody-ody~",
+    "slay.",
+    "Discipline is the greatest form of self-love.",
+    "I've never once regretted going to bed early.",
+    "Same small things, repeated for years.",
+    "Time passes anyways.",
+    "Tea is too weak, body is coffee.",
+    "Posture check!",
+    "I pray my tits are sitting right.",
+    "Serving face, serving reps?",
+    "Hot girls have hobbies!",
+    "Fat ass, tiny waist.",
+    "Muscle mommy AND pilates princess...",
+    "Thick thighs save lives.",
+    "Hydrated, moisturized, unbothered.",
+    "Eat protein, touch grass.",
+    "Good habits are your hottest accessories.",
+    "One day or day one?",
+    "Consistency is such a flex.",
+    "I am but a girl with a very specific routine.",
+    "sleep, steps, protein, posture.",
+    "hard to kill and easy to look at.",
+    "The vibe is medically unnecessary levels of self-improvement.",
+    "A feminine urge to get my life together~",
+    "Soft life, hard sets.",
+    "go to bed. stop doomscrolling. lock in.",
+    "The universe has a crush on you uwu.",
+    "i'm literally her.",
+    "I'm in my 'what if everything goes suspiciously well' era.",
+    "standards are high cuz my imagination is higher",
+    "never met a problem that couldn't be improved by becoming hotter",
+    "May the audacity of mediocre men never infect me.",
+    "miku, miku, oo ee oo..."
+
+
+  ];
+
   // Closing shot: the trio rises through the screen wearing the week's work.
   function showRecapTrio(gen) {
     var reduce = prefersReduced();
     var rows = figureRows();
     recapDayId = "";
     el.recapStage.innerHTML = "";
-    el.recapCaption.textContent = "";
     el.recapCaption.classList.remove("is-empty");
     el.recapTrio.innerHTML = figureOrder().map(function (p) {
       var areas = weekAreas(p.id, rows);
@@ -1199,10 +1240,12 @@ function consider(checkins) {
         "</div>"
       );
     }).join("");
+    el.recapCaption.textContent = RECAP_LINES[Math.floor(Math.random() * RECAP_LINES.length)];
     el.recapTrio.hidden = false;
     var view = el.recapLayer.clientHeight || el.lcd.clientHeight;
     var height = el.recapTrio.offsetHeight;
-    var center = (view - height) / 2;
+    // Rest a little below the middle of the space above the line, which stays put at the bottom.
+    var center = Math.max(0, (view - el.recapCaption.offsetHeight - 10 - height) * 0.68);
     recapTrioPlace(view + 24);
     return recapMove(view + 24, center, reduce ? 20 : 900, gen, recapTrioPlace).then(function (ok) {
       if (!ok) return false;
@@ -1639,6 +1682,7 @@ function consider(checkins) {
       nx: home.nx,
       ny: home.ny,
       nz: home.nz,
+      rot: 0,
     };
   }
 
@@ -1675,8 +1719,8 @@ function consider(checkins) {
   // Sparkles on the title: x, y, size, where in the twinkle each starts, color.
   // phone.js keeps the same list for the copy on the back.
   var TITLE_SPARKS = [
-    [88, 16, 7, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 5, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 8, 0.2, "rgba(255, 178, 122, 0.78)"],
-    [128, 66, 5, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 6, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 4, 0.85, "rgba(140, 205, 255, 0.78)"],
+    [88, 16, 12, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 9, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 13, 0.2, "rgba(255, 178, 122, 0.78)"],
+    [128, 66, 9, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 10, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 8, 0.85, "rgba(140, 205, 255, 0.78)"],
   ];
 
   function titleSparks() {
@@ -1811,8 +1855,8 @@ function consider(checkins) {
       el.faceStickers.innerHTML = myStickers().filter(function (row) {
         return row.kind === "face" && row.dayId !== TITLE_ID;
       }).map(function (row) {
-        return '<button type="button" class="stuck-face" data-day="' + row.dayId +
-          '" style="left:' + row.x + "px;top:" + row.y + 'px">' + stickerWrap(row.dayId) + "</button>";
+        return '<button type="button" class="stuck-face' + (row.matte ? " is-matte" : "") + '" data-day="' + row.dayId +
+          '" style="left:' + row.x + "px;top:" + row.y + "px;--rot:" + (row.rot || 0) + 'deg">' + stickerWrap(row.dayId) + "</button>";
       }).join("");
     }
     var title = titleRow();
@@ -1821,6 +1865,7 @@ function consider(checkins) {
     if (onFace) {
       el.titleSticker.style.left = title.x + "px";
       el.titleSticker.style.top = title.y + "px";
+      el.titleSticker.style.setProperty("--rot", (title.rot || 0) + "deg");
     }
     el.titleSticker.classList.toggle("is-grab", decorateOpen && !picking);
     if (!decorateOpen || !el.colorCol || !el.stickerCol) return;
@@ -1853,9 +1898,52 @@ function consider(checkins) {
     el.ghost.style.top = y + "px";
   }
 
+  // Degrees turned on the surface: left is negative, right is positive.
+  function normRot(deg) {
+    var r = Math.round(deg) % 360;
+    if (r > 180) r -= 360;
+    if (r <= -180) r += 360;
+    return r;
+  }
+
+  function twistAngle() {
+    return Math.atan2(drag.ty - drag.y, drag.tx - drag.x) * 180 / Math.PI;
+  }
+
+  function setDragRot(deg) {
+    drag.rot = normRot(deg);
+    el.ghost.style.setProperty("--rot", drag.rot + "deg");
+  }
+
+  // A second finger put down while a sticker is held turns it.
+  function beginTwist(event) {
+    drag.twistId = event.pointerId;
+    drag.tx = event.clientX;
+    drag.ty = event.clientY;
+    drag.twistFrom = twistAngle();
+    drag.rotFrom = drag.rot;
+  }
+
   function beginDrag(dayId, placed, src, event) {
     if (!dayId || drag || picking) return;
-    drag = { dayId: dayId, placed: placed, src: src };
+    var rot = 0;
+    var matte = false;
+    if (placed) {
+      shownStickers().forEach(function (row) {
+        if (row.dayId !== dayId) return;
+        rot = row.rot || 0;
+        matte = !!row.matte;
+      });
+    }
+    drag = {
+      dayId: dayId, placed: placed, src: src,
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      x0: event.clientX, y0: event.clientY, moved: false,
+      rot: rot, rot0: rot, matte: matte,
+      twistId: null, tx: 0, ty: 0, twistFrom: 0, rotFrom: 0,
+    };
+    el.ghost.classList.toggle("is-matte", matte);
+    el.ghost.style.setProperty("--rot", rot + "deg");
     if (src) src.style.opacity = "0.25";
     el.ghost.classList.toggle("is-title", dayId === TITLE_ID);
     el.ghost.innerHTML = dayId === TITLE_ID ? titleSvg() : stickerWrap(dayId);
@@ -1875,13 +1963,53 @@ function consider(checkins) {
 
   function endDrag(event) {
     if (!drag) return;
+    if (event.pointerId === drag.twistId) {
+      drag.twistId = null;
+      return;
+    }
+    if (event.pointerId !== drag.pointerId) return;
     var info = drag;
     drag = null;
+    // The turning finger may still be down. Its tap should not press a button.
+    if (info.twistId !== null) twistStray = info.twistId;
     if (info.src) info.src.style.opacity = "";
     if (window.PhoneShell) window.PhoneShell.setDragging(false);
     var isTitle = info.dayId === TITLE_ID;
+    // A tap on a monster that is already stuck leaves it where it is and
+    // switches it between shiny and matte.
+    if (info.placed && !isTitle && playerId && event.type === "pointerup" && !info.moved && info.rot === info.rot0) {
+      var stuck = null;
+      myStickers().forEach(function (row) {
+        if (row.dayId === info.dayId) stuck = row;
+      });
+      if (stuck) {
+        var flipped = {
+          action: "place",
+          playerId: playerId,
+          dayId: stuck.dayId,
+          kind: stuck.kind,
+          x: stuck.x,
+          y: stuck.y,
+          z: stuck.z,
+          nx: stuck.nx,
+          ny: stuck.ny,
+          nz: stuck.nz,
+          rot: stuck.rot || 0,
+          matte: !stuck.matte,
+        };
+        var kept = {};
+        Object.keys(flipped).forEach(function (key) {
+          if (key !== "action") kept[key] = flipped[key];
+        });
+        setLocalSticker(kept);
+        el.ghost.hidden = true;
+        renderDecor();
+        decorPost(flipped);
+        return;
+      }
+    }
     var hit = playerId && window.PhoneShell &&
-      window.PhoneShell[isTitle ? "hitTitle" : "hitTest"](event.clientX, event.clientY);
+      window.PhoneShell[isTitle ? "hitTitle" : "hitTest"](event.clientX, event.clientY, info.rot);
     if (hit) {
       setLocalSticker({
         playerId: playerId,
@@ -1893,6 +2021,8 @@ function consider(checkins) {
         nx: hit.nx,
         ny: hit.ny,
         nz: hit.nz,
+        rot: info.rot,
+        matte: info.matte,
       });
       el.ghost.hidden = true;
       renderDecor();
@@ -1907,12 +2037,14 @@ function consider(checkins) {
         nx: hit.nx,
         ny: hit.ny,
         nz: hit.nz,
+        rot: info.rot,
+        matte: info.matte,
       });
       return;
     }
     // No row would send the title back to its home on the back of the phone.
     if (isTitle && info.placed && playerId) {
-      setLocalSticker({ playerId: playerId, dayId: TITLE_ID, kind: "tray", x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 });
+      setLocalSticker({ playerId: playerId, dayId: TITLE_ID, kind: "tray", x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, rot: 0 });
     } else if (info.placed && playerId) {
       clearLocalSticker(info.dayId);
     }
@@ -2098,7 +2230,13 @@ function consider(checkins) {
     beginDrag(btn.getAttribute("data-day"), true, btn, event);
   });
   document.addEventListener("pointerdown", function (event) {
-    if (!decorateOpen || drag || !window.PhoneShell) return;
+    if (drag) {
+      if (drag.twistId === null && event.pointerId !== drag.pointerId) beginTwist(event);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (!decorateOpen || !window.PhoneShell) return;
     if (event.target.closest && event.target.closest("#decorate, .deco-col, .stuck-face, .title-sticker, button")) return;
     var dayId = window.PhoneShell.pickSticker(event.clientX, event.clientY);
     if (!dayId) return;
@@ -2106,10 +2244,39 @@ function consider(checkins) {
   }, true);
   document.addEventListener("pointermove", function (event) {
     if (!drag) return;
-    moveGhost(event.clientX, event.clientY);
+    if (event.pointerId === drag.twistId) {
+      drag.tx = event.clientX;
+      drag.ty = event.clientY;
+    } else if (event.pointerId === drag.pointerId) {
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      if (Math.hypot(drag.x - drag.x0, drag.y - drag.y0) > 8) drag.moved = true;
+      moveGhost(event.clientX, event.clientY);
+    } else {
+      return;
+    }
+    if (drag.twistId !== null) setDragRot(drag.rotFrom + twistAngle() - drag.twistFrom);
   });
+  // With a mouse, the wheel turns the sticker being held.
+  document.addEventListener("wheel", function (event) {
+    if (!drag || !event.deltaY) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragRot(drag.rot + (event.deltaY > 0 ? 5 : -5));
+  }, { capture: true, passive: false });
+  function endStray(event) {
+    if (event.pointerId !== twistStray) return;
+    setTimeout(function () { twistStray = null; }, 60);
+  }
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
+  document.addEventListener("pointerup", endStray);
+  document.addEventListener("pointercancel", endStray);
+  document.addEventListener("click", function (event) {
+    if (!drag && twistStray === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
   window.addEventListener("phone-ready", function () {
     renderTitle();
     renderDecor();

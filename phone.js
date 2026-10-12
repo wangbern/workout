@@ -33,8 +33,8 @@ const TITLE_HOME = { kind: "mesh", x: 0, y: -10, z: -DEPTH / 2 - 8, nx: 0, ny: 0
 const TITLE_RIM = "#2a2f5a";
 // Same sparkles as TITLE_SPARKS in app.js: x, y, size, twinkle phase, color.
 const SPARKS = [
-  [88, 16, 7, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 5, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 8, 0.2, "rgba(255, 178, 122, 0.78)"],
-  [128, 66, 5, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 6, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 4, 0.85, "rgba(140, 205, 255, 0.78)"],
+  [88, 16, 12, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 9, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 13, 0.2, "rgba(255, 178, 122, 0.78)"],
+  [128, 66, 9, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 10, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 8, 0.85, "rgba(140, 205, 255, 0.78)"],
 ];
 const HOLO_BRIGHT = [
   [0, "#ff3d9a"], [0.16, "#ff8a1f"], [0.32, "#f5c400"], [0.48, "#22c96b"],
@@ -71,6 +71,12 @@ let leftBtn;
 let rightBtn;
 let stickerGroup;
 const stickerTex = {};
+const stickerArt = {};
+const STICKER_PAD = 8;
+let sheenAt = 0;
+const sheenNormal = new THREE.Vector3();
+const sheenView = new THREE.Vector3();
+const sheenSpot = new THREE.Vector3();
 let titleCanvas;
 let titleEdge;
 let titleTex;
@@ -260,11 +266,15 @@ function clamp(value, lo, hi) {
 // The title is wide, so it only lies flat on the front or the back, and it
 // slides in from the edges instead of hanging off them. It may lap over the
 // rim of the screen, as it always has, but its middle stays off the screen.
-function hitTitle(clientX, clientY) {
+function hitTitle(clientX, clientY, rot) {
   const hit = shellHit(clientX, clientY);
   if (!hit) return null;
-  const padX = 170;
-  const padY = 44;
+  // Turned, the title needs more room up and down and less side to side.
+  const turn = (rot || 0) * Math.PI / 180;
+  const cos = Math.abs(Math.cos(turn));
+  const sin = Math.abs(Math.sin(turn));
+  const padX = 170 * cos + 44 * sin;
+  const padY = 170 * sin + 44 * cos;
   if (hit.normal.z > 0.55) {
     const fx = clamp(hit.point.x + FACE_W / 2, padX, FACE_W - padX);
     const fy = clamp(FACE_H / 2 - hit.point.y, padY, FACE_H - padY);
@@ -317,19 +327,80 @@ function stickerTexture(dayId) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   stickerTex[dayId] = tex;
+  // The monster is drawn once on its own canvas. The glint is painted over a
+  // copy of it, so the SVG is never drawn again.
+  const base = document.createElement("canvas");
+  base.width = canvas.width;
+  base.height = canvas.height;
+  const art = { tex: tex, base: base, g: canvas.getContext("2d"), ready: false, lit: false };
+  stickerArt[dayId] = art;
   const svg = window.MonsterArt.stickerSvg(dayId);
   const img = new Image();
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   img.onload = function () {
-    const g = canvas.getContext("2d");
-    g.clearRect(0, 0, canvas.width, canvas.height);
+    const g = base.getContext("2d");
+    g.clearRect(0, 0, base.width, base.height);
     g.imageSmoothingEnabled = false;
-    g.drawImage(img, 8, 8, canvas.width - 16, canvas.height - 16);
+    g.drawImage(img, STICKER_PAD, STICKER_PAD, base.width - 2 * STICKER_PAD, base.height - 2 * STICKER_PAD);
+    art.g.clearRect(0, 0, canvas.width, canvas.height);
+    art.g.drawImage(base, 0, 0);
+    art.ready = true;
     tex.needsUpdate = true;
     URL.revokeObjectURL(url);
   };
   img.src = url;
   return tex;
+}
+
+// The white glint from .sticker-sheen-band in styles.css, for stickers on
+// the shell. It is painted about 30 times a second, only on stickers that
+// face the camera, and not at all while the band is off the sticker.
+function paintSheens(now) {
+  if (now - sheenAt < 32) return;
+  sheenAt = now;
+  const w = 160 - 2 * STICKER_PAD;
+  const h = 176 - 2 * STICKER_PAD;
+  const bandW = 0.45 * w;
+  const bandH = 1.4 * h;
+  const left = STICKER_PAD + w * (-0.6 + 1.71 * ((now % 2600) / 2600));
+  const top = STICKER_PAD - 0.2 * h;
+  const on = left + bandW > STICKER_PAD && left < STICKER_PAD + w;
+  let grad = null;
+  stickerGroup.children.forEach(function (mesh) {
+    const art = stickerArt[mesh.userData.dayId];
+    // A matte sticker gets no glint, only a clean repaint if it had one.
+    const shine = on && !mesh.userData.matte;
+    if (!art || !art.ready || (!shine && !art.lit)) return;
+    mesh.getWorldDirection(sheenNormal);
+    sheenView.copy(camera.position).sub(mesh.getWorldPosition(sheenSpot));
+    if (sheenNormal.dot(sheenView) <= 0) return;
+    const g = art.g;
+    g.globalCompositeOperation = "copy";
+    g.drawImage(art.base, 0, 0);
+    if (shine) {
+      if (!grad) {
+        // linear-gradient(115deg, ...) across the band's box.
+        const dx = Math.sin(115 * Math.PI / 180);
+        const dy = -Math.cos(115 * Math.PI / 180);
+        const half = (bandW * dx + bandH * dy) / 2;
+        const cx = left + bandW / 2;
+        const cy = top + bandH / 2;
+        grad = g.createLinearGradient(cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half);
+        grad.addColorStop(0, "rgba(255, 255, 255, 0)");
+        grad.addColorStop(0.36, "rgba(255, 255, 255, 0.15)");
+        grad.addColorStop(0.5, "rgba(255, 255, 255, 0.9)");
+        grad.addColorStop(0.62, "rgba(186, 230, 255, 0.55)");
+        grad.addColorStop(1, "rgba(186, 230, 255, 0)");
+      }
+      // source-atop keeps the glint inside the monster's own shape.
+      g.globalCompositeOperation = "source-atop";
+      g.fillStyle = grad;
+      g.fillRect(left, top, bandW, bandH);
+    }
+    g.globalCompositeOperation = "source-over";
+    art.lit = shine;
+    art.tex.needsUpdate = true;
+  });
 }
 
 function holoFill(g, now) {
@@ -486,11 +557,11 @@ function setStickers(list) {
     n.normalize();
     mesh.position.set(place.x, place.y, place.z).add(n.clone().multiplyScalar(8));
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
-    if (isTitle) {
-      mesh.rotateZ(TITLE_TILT);
-      titleShown = true;
-    }
+    // Seen from outside the shell, a turn to the right is clockwise.
+    mesh.rotateZ((isTitle ? TITLE_TILT : 0) - (place.rot || 0) * Math.PI / 180);
+    if (isTitle) titleShown = true;
     mesh.userData.dayId = place.dayId;
+    mesh.userData.matte = !!place.matte;
     mesh.renderOrder = 3;
     stickerGroup.add(mesh);
   });
@@ -633,6 +704,7 @@ function frame() {
   else controls.update();
   updateFacing();
   if (titleShown && !reduceMotion) paintTitle(now);
+  if (!reduceMotion) paintSheens(now);
   renderer.render(scene, camera);
   cssRenderer.render(cssScene, camera);
 }

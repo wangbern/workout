@@ -214,7 +214,7 @@ body.no-3d #phone-face {
   z-index: 6;
   display: block;
   margin: 0;
-  transform: translate(-50%, -50%) rotate(-6deg);
+  transform: translate(-50%, -50%) rotate(calc(-6deg + var(--rot, 0deg)));
   filter: drop-shadow(2px 4px 2px rgba(20, 55, 100, 0.32));
   touch-action: none;
 }
@@ -1307,7 +1307,7 @@ body.no-3d .title-sticker {
   width: 72px;
   height: 80px;
   margin: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--rot, 0deg));
   z-index: 6;
 }
 
@@ -1342,6 +1342,10 @@ body.no-3d .title-sticker {
   mask-mode: alpha;
 }
 
+/* Tapped to matte in decorate mode: the monster with no glint. */
+.stuck-face.is-matte .sticker-sheen,
+.sticker-ghost.is-matte .sticker-sheen { display: none; }
+
 .sticker-sheen-band {
   position: absolute;
   top: -20%;
@@ -1365,14 +1369,14 @@ body.no-3d .title-sticker {
   width: 72px;
   height: 80px;
   margin: 0;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) rotate(var(--rot, 0deg));
   pointer-events: none;
 }
 
 .sticker-ghost.is-title {
   width: 240px;
   height: 42px;
-  transform: translate(-50%, -50%) rotate(-6deg);
+  transform: translate(-50%, -50%) rotate(calc(-6deg + var(--rot, 0deg)));
   filter: drop-shadow(2px 4px 2px rgba(20, 55, 100, 0.32));
 }
 

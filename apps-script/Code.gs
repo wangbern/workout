@@ -20,6 +20,9 @@
  * has it and it only goes on the front or the back. With no row the page
  * shows it at the center of the back, so taking it off the phone keeps the
  * row with kind "tray" instead of deleting it.
+ * rot is how far a sticker is turned on its surface, in whole degrees:
+ * left is negative, right is positive. finish is "matte" for a monster
+ * tapped to lose its shine, and "shiny" otherwise.
  * Passwords are not in this file. Add them under Project Settings → Script
  * properties as PASSWORD_AUNTIE, PASSWORD_SHELBY and PASSWORD_BERNICE.
  * The page sends action "login" to check one, and every save must carry
@@ -151,6 +154,16 @@ function num_(value) {
   return Math.round(n * 1000) / 1000;
 }
 
+// Whole degrees from -179 to 180. A blank cell is no turn.
+function rot_(value) {
+  var n = Math.round(Number(value));
+  if (!isFinite(n)) return 0;
+  n = n % 360;
+  if (n > 180) n -= 360;
+  if (n <= -180) n += 360;
+  return n;
+}
+
 function saveColor_(body) {
   var playerId = String(body.playerId || "");
   var color = String(body.color || "");
@@ -181,6 +194,8 @@ function saveSticker_(body) {
   var nx = num_(body.nx);
   var ny = num_(body.ny);
   var nz = num_(body.nz);
+  var rot = rot_(body.rot);
+  var finish = body.matte === true && dayId !== TITLE_ID ? "matte" : "shiny";
   if (!PLAYERS[playerId] || !kind || x === null || y === null || z === null || nx === null || ny === null || nz === null) {
     return { error: "refused" };
   }
@@ -201,9 +216,9 @@ function saveSticker_(body) {
     }
   }
   var row = found || sh.getLastRow() + 1;
-  var range = sh.getRange(row, 1, 1, 9);
+  var range = sh.getRange(row, 1, 1, 11);
   range.setNumberFormat("@");
-  range.setValues([[playerId, dayId, kind, String(x), String(y), String(z), String(nx), String(ny), String(nz)]]);
+  range.setValues([[playerId, dayId, kind, String(x), String(y), String(z), String(nx), String(ny), String(nz), String(rot), finish]]);
   return readState_();
 }
 
@@ -221,9 +236,9 @@ function removeSticker_(body) {
         break;
       }
     }
-    var range = sh.getRange(found || sh.getLastRow() + 1, 1, 1, 9);
+    var range = sh.getRange(found || sh.getLastRow() + 1, 1, 1, 11);
     range.setNumberFormat("@");
-    range.setValues([[playerId, dayId, "tray", "0", "0", "0", "0", "0", "0"]]);
+    range.setValues([[playerId, dayId, "tray", "0", "0", "0", "0", "0", "0", "0", "shiny"]]);
     return readState_();
   }
   for (var i = values.length - 1; i >= 1; i--) {
@@ -256,13 +271,23 @@ function stickerSheet_() {
   var sh = ss.getSheetByName("Stickers");
   if (!sh) sh = ss.insertSheet("Stickers");
   if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 9).setNumberFormat("@");
-    sh.getRange(1, 1, 1, 9).setValues([[
-      "player_id", "day_id", "kind", "x", "y", "z", "nx", "ny", "nz",
+    sh.getRange(1, 1, 1, 11).setNumberFormat("@");
+    sh.getRange(1, 1, 1, 11).setValues([[
+      "player_id", "day_id", "kind", "x", "y", "z", "nx", "ny", "nz", "rot", "finish",
     ]]);
-    sh.getRange(1, 1, 1, 9).setFontWeight("bold");
+    sh.getRange(1, 1, 1, 11).setFontWeight("bold");
     sh.setFrozenRows(1);
   }
+  // Sheets made before stickers could turn or go matte lack these columns.
+  if (sh.getMaxColumns() < 11) sh.insertColumnsAfter(sh.getMaxColumns(), 11 - sh.getMaxColumns());
+  var added = { 10: "rot", 11: "finish" };
+  Object.keys(added).forEach(function (col) {
+    var head = sh.getRange(1, Number(col));
+    if (asText_(head.getValue())) return;
+    head.setNumberFormat("@");
+    head.setValue(added[col]);
+    head.setFontWeight("bold");
+  });
   return sh;
 }
 
@@ -305,6 +330,8 @@ function readStickers_() {
       nx: num_(values[i][6]),
       ny: num_(values[i][7]),
       nz: num_(values[i][8]),
+      rot: rot_(values[i][9]),
+      matte: asText_(values[i][10]) === "matte",
     });
   }
   return list;
