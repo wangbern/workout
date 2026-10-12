@@ -2,11 +2,11 @@
 // (timezone A and reset hour) lives in apps-script/Code.gs — keep them together.
 //
 // Timezone names were blank in the setup notes. Shelby and Bernice are on the
-// US side, Auntie is in China, and the page copy says 美西 / 北京, so the
+// US side, Liping is in China, and the page copy says 美西 / 北京, so the
 // anchor is Pacific Time and the other clock is China.
 window.MONSTER_CONFIG = {
   players: [
-    { id: "p1", en: "Auntie", zh: "Auntie", zone: "B" },
+    { id: "p1", en: "Liping", zh: "立平", zone: "B" },
     { id: "p2", en: "Shelby", zh: "Shelby", zone: "A" },
     { id: "p3", en: "Bernice", zh: "Bernice", zone: "A" },
   ],

@@ -1,20 +1,9 @@
-// The monster is drawn from day_id. Same id, same parts, on every phone.
+// The monster is drawn from day_id. Same id, same pixels, on every phone.
 (function (factory) {
   var api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.MonsterArt = api;
 })(function () {
-  var INK = "#3D2C29";
-  var NAMES_EN = [
-    "Momo", "Lulu", "Boba", "Kiki", "Nori", "Pepa", "Zuzu", "Mimi",
-    "Taro", "Poko", "Fifi", "Dodo", "Koko", "Bibi", "Coco", "Pipi",
-    "Roro", "Soso", "Wawa", "Nono", "Yoyo", "Gigi", "Hana", "Mochi",
-  ];
-  var NAMES_ZH = [
-    "萌萌", "豆豆", "球球", "糯糯", "泡泡", "团团", "圆圆", "点点",
-    "果果", "软软", "毛毛", "饼饼", "嘟嘟", "咕咕", "胖胖", "花花",
-    "糖糖", "波波", "奶球", "小满", "丸子", "汤圆", "布丁", "麻薯",
-  ];
   var BODIES = ["blob", "pear", "box", "bean"];
   var EYES = ["dot", "happy", "wide"];
   var PATTERNS = ["plain", "spots", "stripes", "belly"];
@@ -46,7 +35,7 @@
     var eyes = EYES[Math.floor(rand() * EYES.length)];
     var earCount = Math.floor(rand() * 4);
     var pattern = PATTERNS[Math.floor(rand() * PATTERNS.length)];
-    var nameIndex = Math.floor(rand() * NAMES_EN.length);
+    rand(); // kept so ears and spots stay tied to the same day id
     var earKind = rand() < 0.5 ? "ear" : "horn";
     var spots = [];
     for (var i = 0; i < 5; i++) {
@@ -64,287 +53,457 @@
       earKind: earKind,
       pattern: pattern,
       spots: spots,
-      nameEn: NAMES_EN[nameIndex],
-      nameZh: NAMES_ZH[nameIndex],
     };
+  }
+
+  var PX = 10;
+  var FEET = 70;
+  var OUTLINE = "#14180c";
+
+  var MASKS = {
+    blob: [
+      [6, 9], [4, 11], [3, 12], [3, 12], [2, 13], [2, 13], [2, 13],
+      [2, 13], [2, 13], [2, 13], [3, 12], [3, 12], [4, 11], [5, 10],
+    ],
+    pear: [
+      [6, 9], [5, 10], [4, 11], [4, 11], [3, 12], [3, 12], [3, 12],
+      [2, 13], [2, 13], [2, 13], [2, 13], [3, 12], [4, 11], [5, 10],
+    ],
+    box: [
+      [4, 11], [3, 12], [2, 13], [2, 13], [2, 13], [2, 13], [2, 13],
+      [2, 13], [2, 13], [2, 13], [2, 13], [3, 12], [4, 11],
+    ],
+    bean: [
+      [5, 10], [4, 11], [3, 12], [3, 12], [2, 12], [2, 13], [2, 13],
+      [3, 13], [3, 13], [4, 12], [4, 12], [5, 11], [5, 11], [6, 10],
+    ],
+  };
+
+  function quantHex(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s = Math.max(0, Math.min(100, s)) / 100;
+    l = Math.max(0, Math.min(100, l)) / 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var hp = h / 60;
+    var x = c * (1 - Math.abs((hp % 2) - 1));
+    var r1 = 0;
+    var g1 = 0;
+    var b1 = 0;
+    if (hp < 1) { r1 = c; g1 = x; }
+    else if (hp < 2) { r1 = x; g1 = c; }
+    else if (hp < 3) { g1 = c; b1 = x; }
+    else if (hp < 4) { g1 = x; b1 = c; }
+    else if (hp < 5) { r1 = x; b1 = c; }
+    else { r1 = c; b1 = x; }
+    var m = l - c / 2;
+    function chan(v) {
+      var n = Math.round((v + m) * 255);
+      n = Math.max(0, Math.min(248, Math.round(n / 8) * 8));
+      var hex = n.toString(16);
+      return hex.length < 2 ? "0" + hex : hex;
+    }
+    return "#" + chan(r1) + chan(g1) + chan(b1);
   }
 
   function colors(hue) {
+    var h = Math.round(hue / 15) * 15;
     return {
-      body: "hsl(" + hue + ", 70%, 64%)",
-      deep: "hsl(" + hue + ", 55%, 46%)",
-      belly: "hsl(" + hue + ", 78%, 86%)",
-      ear: "hsl(" + hue + ", 62%, 52%)",
+      body: quantHex(h, 78, 54),
+      deep: quantHex(h, 72, 34),
+      light: quantHex(h, 58, 76),
+      belly: quantHex(h, 32, 84),
+      ear: quantHex(h, 64, 42),
+      earIn: quantHex((h + 24) % 360, 40, 80),
+      cheek: "#e85868",
+      white: "#f8f8f0",
+      outline: OUTLINE,
     };
   }
 
-  function bodyGeom(type) {
-    if (type === "blob") return '<ellipse cx="0" cy="4" rx="78" ry="70"/>';
-    if (type === "box") return '<rect x="-66" y="-58" width="132" height="132" rx="36"/>';
-    if (type === "pear") {
-      return '<path d="M0-80C48-76 64-28 70 12C76 50 46 74 0 74C-46 74-76 50-70 12C-64-28-48-76 0-80Z"/>';
-    }
-    return '<path d="M-8-74C42-90 88-24 72 22C60 60 22 78-6 72C-48 64-82 28-74-10C-66-48-42-58-8-74Z"/>';
+  function cellKey(x, y) {
+    return x + "," + y;
   }
 
-  function earSpots(count) {
-    if (count === 1) return [{ x: 0, y: -98, rot: 0 }];
-    if (count === 2) {
-      return [
-        { x: -64, y: -72, rot: -22 },
-        { x: 64, y: -72, rot: 22 },
-      ];
-    }
-    if (count === 3) {
-      return [
-        { x: -72, y: -60, rot: -32 },
-        { x: 0, y: -104, rot: 0 },
-        { x: 72, y: -58, rot: 30 },
-      ];
-    }
-    return [];
-  }
+  function buildSprite(traits) {
+    var pal = colors(traits.hue);
+    var mask = MASKS[traits.body] || MASKS.blob;
+    var body = {};
+    mask.forEach(function (span, y) {
+      for (var x = span[0]; x <= span[1]; x++) body[cellKey(x, y)] = "body";
+    });
 
-  function earsMarkup(traits, palette) {
-    return earSpots(traits.earCount)
-      .map(function (spot) {
-        var inner =
-          traits.earKind === "horn"
-            ? '<path d="M0-32 L16 12 Q0 2 -16 12 Z" fill="' +
-              palette.ear +
-              '" stroke="' +
-              INK +
-              '" stroke-width="5" stroke-linejoin="round"/>'
-            : '<ellipse cx="0" cy="0" rx="18" ry="26" fill="' +
-              palette.ear +
-              '" stroke="' +
-              INK +
-              '" stroke-width="5"/>' +
-              '<ellipse cx="0" cy="6" rx="8" ry="12" fill="' +
-              palette.belly +
-              '"/>';
-        return (
-          '<g transform="translate(' +
-          spot.x +
-          " " +
-          spot.y +
-          ") rotate(" +
-          spot.rot +
-          ')">' +
-          inner +
-          "</g>"
-        );
-      })
-      .join("");
-  }
+    function spanAt(y) {
+      var left = 99;
+      var right = -1;
+      for (var x = 0; x < 16; x++) {
+        if (body[cellKey(x, y)] === "body") {
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+      }
+      if (right < 0) return null;
+      return [left, right];
+    }
 
-  function faceMarkup(eyes) {
-    var cheeks =
-      '<ellipse cx="-44" cy="26" rx="12" ry="8" fill="#FF8A5B"/>' +
-      '<ellipse cx="46" cy="28" rx="12" ry="8" fill="#FF8A5B"/>';
-    var smile =
-      '<path d="M-16 36 Q2 52 22 34" fill="none" stroke="' +
-      INK +
-      '" stroke-width="5" stroke-linecap="round"/>';
-    var eye = "";
-    if (eyes === "happy") {
-      eye =
-        '<path d="M-46 0 Q-28-20 -10 0" fill="none" stroke="' +
-        INK +
-        '" stroke-width="5" stroke-linecap="round"/>' +
-        '<path d="M12 0 Q30-20 48 0" fill="none" stroke="' +
-        INK +
-        '" stroke-width="5" stroke-linecap="round"/>';
-    } else if (eyes === "wide") {
-      eye =
-        '<ellipse cx="-28" cy="-4" rx="18" ry="16" fill="#fff" stroke="' +
-        INK +
-        '" stroke-width="4"/>' +
-        '<ellipse cx="30" cy="-4" rx="18" ry="16" fill="#fff" stroke="' +
-        INK +
-        '" stroke-width="4"/>' +
-        '<circle cx="-24" cy="-2" r="7" fill="' +
-        INK +
-        '"/>' +
-        '<circle cx="34" cy="-2" r="7" fill="' +
-        INK +
-        '"/>' +
-        '<circle cx="-21" cy="-5" r="2.4" fill="#fff"/>' +
-        '<circle cx="37" cy="-5" r="2.4" fill="#fff"/>';
-    } else {
-      eye =
-        '<circle cx="-28" cy="-6" r="15" fill="#fff" stroke="' +
-        INK +
-        '" stroke-width="4"/>' +
-        '<circle cx="30" cy="-4" r="15" fill="#fff" stroke="' +
-        INK +
-        '" stroke-width="4"/>' +
-        '<circle cx="-25" cy="-4" r="7" fill="' +
-        INK +
-        '"/>' +
-        '<circle cx="33" cy="-2" r="7" fill="' +
-        INK +
-        '"/>' +
-        '<circle cx="-22" cy="-7" r="2.5" fill="#fff"/>' +
-        '<circle cx="36" cy="-5" r="2.5" fill="#fff"/>';
+    var top = spanAt(0);
+    var band = null;
+    var bandY = 0;
+    var topBand = Math.max(0, Math.floor(mask.length * 0.22));
+    for (var y = 0; y <= topBand; y++) {
+      var sp = spanAt(y);
+      if (!sp) continue;
+      if (!band || sp[1] - sp[0] > band[1] - band[0]) {
+        band = sp;
+        bandY = y;
+      }
     }
-    return '<g class="face">' + eye + cheeks + smile + "</g>";
-  }
 
-  function patternMarkup(traits, palette) {
-    if (traits.pattern === "spots") {
-      return traits.spots
-        .map(function (s) {
-          return (
-            '<circle cx="' +
-            s.x.toFixed(1) +
-            '" cy="' +
-            s.y.toFixed(1) +
-            '" r="' +
-            s.r.toFixed(1) +
-            '" fill="' +
-            palette.deep +
-            '"/>'
-          );
-        })
-        .join("");
+    var anchors = [];
+    if ((traits.earCount === 1 || traits.earCount === 3) && top) {
+      anchors.push([Math.round((top[0] + top[1]) / 2), 0]);
     }
-    if (traits.pattern === "stripes") {
-      return (
-        '<rect x="-100" y="-40" width="200" height="16" fill="' +
-        palette.deep +
-        '" opacity="0.55"/>' +
-        '<rect x="-100" y="-8" width="200" height="16" fill="' +
-        palette.deep +
-        '" opacity="0.55"/>' +
-        '<rect x="-100" y="24" width="200" height="16" fill="' +
-        palette.deep +
-        '" opacity="0.55"/>'
-      );
+    if (traits.earCount >= 2 && band) {
+      anchors.push([band[0], bandY]);
+      anchors.push([band[1], bandY]);
     }
+    anchors.forEach(function (a) {
+      var ax = a[0];
+      var ay = a[1];
+      if (traits.earKind === "horn") {
+        body[cellKey(ax, ay - 4)] = "horn";
+        body[cellKey(ax, ay - 3)] = "horn";
+        body[cellKey(ax, ay - 2)] = "horn";
+        body[cellKey(ax - 1, ay - 1)] = "horn";
+        body[cellKey(ax, ay - 1)] = "horn";
+        body[cellKey(ax + 1, ay - 1)] = "horn";
+      } else {
+        body[cellKey(ax, ay - 3)] = "ear";
+        body[cellKey(ax - 1, ay - 2)] = "ear";
+        body[cellKey(ax, ay - 2)] = "earIn";
+        body[cellKey(ax + 1, ay - 2)] = "ear";
+        body[cellKey(ax - 1, ay - 1)] = "ear";
+        body[cellKey(ax, ay - 1)] = "earIn";
+        body[cellKey(ax + 1, ay - 1)] = "ear";
+      }
+    });
+
+    var roles = {};
+    Object.keys(body).forEach(function (k) { roles[k] = body[k]; });
+    Object.keys(body).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var nk = cellKey(x + d[0], y + d[1]);
+        if (!roles[nk]) roles[nk] = "outline";
+      });
+    });
+
+    var bminX = 99;
+    var bmaxX = -99;
+    var bminY = 99;
+    var bmaxY = -99;
+    Object.keys(body).forEach(function (k) {
+      if (body[k] !== "body") return;
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      if (x < bminX) bminX = x;
+      if (x > bmaxX) bmaxX = x;
+      if (y < bminY) bminY = y;
+      if (y > bmaxY) bmaxY = y;
+    });
+
+    var faceY = Math.floor(mask.length * 0.36);
+    while (faceY < mask.length - 5) {
+      var faceSpan = spanAt(faceY);
+      if (faceSpan && faceSpan[1] - faceSpan[0] >= 8) break;
+      faceY += 1;
+    }
+    var faceSpanNow = spanAt(faceY) || [4, 11];
+    var mid = Math.round((faceSpanNow[0] + faceSpanNow[1]) / 2);
+    var leftEye = mid - 4;
+    var rightEye = mid + 1;
+    var face = {};
+
+    function isBody(x, y) {
+      return body[cellKey(x, y)] === "body";
+    }
+
+    var fill = {};
+    Object.keys(roles).forEach(function (k) {
+      var role = roles[k];
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      if (role === "outline") fill[k] = pal.outline;
+      else if (role === "horn") fill[k] = pal.deep;
+      else if (role === "ear") fill[k] = pal.ear;
+      else if (role === "earIn") fill[k] = pal.earIn;
+      else {
+        var relX = (x - bminX) / Math.max(1, bmaxX - bminX);
+        var relY = (y - bminY) / Math.max(1, bmaxY - bminY);
+        var onLight = (roles[cellKey(x - 1, y)] === "outline" || roles[cellKey(x, y - 1)] === "outline") && relX < 0.5 && relY < 0.48;
+        var onDark = (roles[cellKey(x + 1, y)] === "outline" || roles[cellKey(x, y + 1)] === "outline") && (relX > 0.52 || relY > 0.6);
+        if (onDark || (relX > 0.7 && relY > 0.5)) fill[k] = pal.deep;
+        else if (onLight) fill[k] = pal.light;
+        else fill[k] = pal.body;
+      }
+    });
+
     if (traits.pattern === "belly") {
-      return '<ellipse cx="0" cy="30" rx="40" ry="32" fill="' + palette.belly + '"/>';
+      var bcx = (bminX + bmaxX) / 2;
+      var bcy = bminY + (bmaxY - bminY) * 0.64;
+      var rx = Math.max(2, (bmaxX - bminX) * 0.26);
+      var ry = Math.max(2, (bmaxY - bminY) * 0.22);
+      Object.keys(body).forEach(function (k) {
+        if (body[k] !== "body") return;
+        var parts = k.split(",");
+        var x = parseInt(parts[0], 10);
+        var y = parseInt(parts[1], 10);
+        var dx = (x - bcx) / rx;
+        var dy = (y - bcy) / ry;
+        if (dx * dx + dy * dy <= 1) fill[k] = dy < -0.35 ? pal.light : pal.belly;
+      });
+    } else if (traits.pattern === "stripes") {
+      Object.keys(body).forEach(function (k) {
+        if (body[k] !== "body" || fill[k] !== pal.body) return;
+        var y = parseInt(k.split(",")[1], 10);
+        if ((y - bminY) % 4 >= 2) fill[k] = pal.deep;
+      });
+    } else if (traits.pattern === "spots") {
+      traits.spots.forEach(function (s) {
+        var col = Math.round((s.x / 88 + 0.5) * (bmaxX - bminX - 3) + bminX + 1);
+        var row = Math.round((s.y / 78 + 0.45) * (bmaxY - bminY - 3) + bminY + 1);
+        for (var dy = 0; dy < 2; dy++) {
+          for (var dx = 0; dx < 2; dx++) {
+            var x = col + dx;
+            var yy = row + dy;
+            if (!isBody(x, yy)) continue;
+            if (yy >= faceY && yy <= faceY + 5 && x >= leftEye - 1 && x <= rightEye + 3) continue;
+            if (fill[cellKey(x, yy)] === pal.light) continue;
+            fill[cellKey(x, yy)] = pal.deep;
+          }
+        }
+      });
     }
-    return "";
+
+    function paintEye(ox, oy, kind) {
+      var rows = kind === "happy"
+        ? ["#.#", ".#."]
+        : kind === "dot"
+          ? [".W.", "WPH", ".W."]
+          : ["WWW", "WPH", "WWW"];
+      rows.forEach(function (row, dy) {
+        for (var dx = 0; dx < row.length; dx++) {
+          var ch = row.charAt(dx);
+          if (ch === ".") continue;
+          var x = ox + dx;
+          var yy = oy + dy;
+          if (!isBody(x, yy)) continue;
+          face[cellKey(x, yy)] = true;
+          fill[cellKey(x, yy)] = ch === "W" || ch === "H" ? pal.white : pal.outline;
+        }
+      });
+    }
+
+    paintEye(leftEye, faceY, traits.eyes);
+    paintEye(rightEye, faceY, traits.eyes);
+    [[-1, 0], [1, 0], [0, 1]].forEach(function (p) {
+      var x = mid + p[0];
+      var yy = faceY + 4 + p[1];
+      if (!isBody(x, yy) || face[cellKey(x, yy)]) return;
+      face[cellKey(x, yy)] = true;
+      fill[cellKey(x, yy)] = pal.outline;
+    });
+    [[leftEye - 1, faceY + 2], [rightEye + 3, faceY + 2]].forEach(function (p) {
+      if (!isBody(p[0], p[1]) || face[cellKey(p[0], p[1])]) return;
+      fill[cellKey(p[0], p[1])] = pal.cheek;
+    });
+
+    var shine = [];
+    [[bminX + 2, bminY + 2], [bminX + 3, bminY + 2], [bminX + 2, bminY + 3]].forEach(function (p) {
+      var k = cellKey(p[0], p[1]);
+      if (body[k] !== "body" || face[k] || fill[k] === pal.deep) return;
+      fill[k] = pal.light;
+      shine.push(k);
+    });
+
+    return { fill: fill, shine: shine, pal: pal };
   }
 
-  function svgString(dayId, uid) {
-    var traits = traitsFor(dayId);
-    var palette = colors(traits.hue);
-    var geom = bodyGeom(traits.body);
-    var clip = uid + "-clip";
-    var body =
-      geom.replace("/>", ' fill="' + palette.body + '" stroke="' + INK + '" stroke-width="5" stroke-linejoin="round"/>');
-    var puddleEyes =
-      '<path d="M-36 50 Q-22 38 -8 50" fill="none" stroke="' +
-      INK +
-      '" stroke-width="5" stroke-linecap="round"/>' +
-      '<path d="M10 50 Q24 38 38 50" fill="none" stroke="' +
-      INK +
-      '" stroke-width="5" stroke-linecap="round"/>' +
-      '<path d="M-12 64 Q2 76 18 62" fill="none" stroke="' +
-      INK +
-      '" stroke-width="5" stroke-linecap="round"/>' +
-      '<ellipse cx="-24" cy="60" rx="8" ry="5" fill="#FF8A5B"/>' +
-      '<ellipse cx="26" cy="60" rx="8" ry="5" fill="#FF8A5B"/>';
+  function spriteOrigin(fill) {
+    var minX = 99;
+    var maxX = -99;
+    var maxY = -99;
+    Object.keys(fill).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    });
+    return {
+      minX: minX,
+      maxY: maxY,
+      left: -((maxX - minX + 1) * PX) / 2,
+    };
+  }
 
+  function cellRect(k, origin, color) {
+    var parts = k.split(",");
+    var x = parseInt(parts[0], 10);
+    var y = parseInt(parts[1], 10);
+    var px = origin.left + (x - origin.minX) * PX;
+    var py = FEET - (origin.maxY - y + 1) * PX;
+    return '<rect x="' + px + '" y="' + py + '" width="' + PX + '" height="' + PX + '" fill="' + color + '"/>';
+  }
+
+  function pxRect(x, y, fill) {
+    return '<rect x="' + x + '" y="' + y + '" width="' + PX + '" height="' + PX + '" fill="' + fill + '"/>';
+  }
+
+  function spriteFromRows(rows, map, shiftX, shiftY) {
+    var h = rows.length;
+    var w = 0;
+    rows.forEach(function (row) {
+      if (row.length > w) w = row.length;
+    });
+    var ox = -Math.floor(w / 2) * PX + (shiftX || 0);
+    var oy = -Math.floor(h / 2) * PX + (shiftY || 0);
+    var out = [];
+    rows.forEach(function (row, iy) {
+      for (var ix = 0; ix < row.length; ix++) {
+        var ch = row.charAt(ix);
+        if (!map[ch]) continue;
+        out.push(pxRect(ox + ix * PX, oy + iy * PX, map[ch]));
+      }
+    });
+    return out.join("");
+  }
+
+  function ovalCells(cx, cy, rx, ry) {
+    var pts = [];
+    var x0 = Math.floor((cx - rx) / PX) - 1;
+    var x1 = Math.ceil((cx + rx) / PX) + 1;
+    var y0 = Math.floor((cy - ry) / PX) - 1;
+    var y1 = Math.ceil((cy + ry) / PX) + 1;
+    for (var yi = y0; yi <= y1; yi++) {
+      for (var xi = x0; xi <= x1; xi++) {
+        var px = xi * PX;
+        var py = yi * PX;
+        var dx = (px + PX / 2 - cx) / rx;
+        var dy = (py + PX / 2 - cy) / ry;
+        if (dx * dx + dy * dy <= 1) pts.push([px, py]);
+      }
+    }
+    return pts;
+  }
+
+  function ovalMarkup(cx, cy, rx, ry, pal) {
+    var inside = {};
+    ovalCells(cx, cy, rx, ry).forEach(function (p) {
+      inside[p[0] + "," + p[1]] = pal.body;
+    });
+    var edge = {};
+    Object.keys(inside).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      [[PX, 0], [-PX, 0], [0, PX], [0, -PX]].forEach(function (d) {
+        var nk = (x + d[0]) + "," + (y + d[1]);
+        if (!inside[nk]) edge[nk] = pal.outline;
+      });
+    });
+    [[-40, cy - 10], [-30, cy - 10], [20, cy - 10], [30, cy - 10], [-10, cy + 10], [0, cy + 10]].forEach(function (p) {
+      var k = p[0] + "," + p[1];
+      if (inside[k]) inside[k] = pal.outline;
+    });
+    [[-50, cy], [40, cy]].forEach(function (p) {
+      var k = p[0] + "," + p[1];
+      if (inside[k]) inside[k] = pal.cheek;
+    });
+    var rects = [];
+    Object.keys(edge).forEach(function (k) {
+      var parts = k.split(",");
+      rects.push(pxRect(parseInt(parts[0], 10), parseInt(parts[1], 10), edge[k]));
+    });
+    Object.keys(inside).forEach(function (k) {
+      var parts = k.split(",");
+      rects.push(pxRect(parseInt(parts[0], 10), parseInt(parts[1], 10), inside[k]));
+    });
+    return rects.join("");
+  }
+
+  function svgString(dayId) {
+    var traits = traitsFor(dayId);
+    var sprite = buildSprite(traits);
+    var origin = spriteOrigin(sprite.fill);
+    var shine = {};
+    sprite.shine.forEach(function (k) { shine[k] = true; });
+    var bodyRects = [];
+    var shineRects = [];
+    Object.keys(sprite.fill).forEach(function (k) {
+      bodyRects.push(cellRect(k, origin, sprite.fill[k]));
+      if (shine[k]) shineRects.push(cellRect(k, origin, "#f8f8f0"));
+    });
+    var pal = sprite.pal;
+    var ink = pal.outline;
+    var boot = spriteFromRows([
+      "  XXXX ",
+      " XXOOX ",
+      "XXOSSX ",
+      "XXXXXXX",
+      " XXXXX ",
+      " XX  XX",
+    ], { X: ink, O: "#f8c0a0", S: "#e08860" }, 0, 0);
+    var fist = spriteFromRows([
+      " XXXX  ",
+      "XXOOXX ",
+      "XOOSOX ",
+      "XOOXOX ",
+      "XOOSOX ",
+      " XXXXX ",
+    ], { X: ink, O: "#f8d0b8", S: "#e0a888" }, 0, 0);
+    var flameMap = { X: ink, Y: "#f8e040", Z: "#f07820" };
+    var flameRows = [" X ", "XYX", "XZX", " X "];
+    var heat = spriteFromRows(flameRows, flameMap, -100, -8) + spriteFromRows(flameRows, flameMap, -60, 0);
+    var shadow = ovalCells(0, 96, 50, 14).map(function (p) {
+      return pxRect(p[0], p[1], "#1a220c");
+    }).join("");
+    var puddle = ovalMarkup(0, 60, 78, 26, pal);
     return (
-      '<svg class="monster-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-150 -158 300 328" role="img" aria-label="' +
-      traits.nameEn +
-      '">' +
-      "<title>" +
-      traits.nameEn +
-      "</title>" +
-      "<defs><clipPath id=\"" +
-      clip +
-      '">' +
-      geom +
-      "</clipPath></defs>" +
-      '<ellipse class="shadow" cx="0" cy="86" rx="54" ry="11" fill="#3D2C29" opacity="0.16"/>' +
-      '<g class="rig">' +
-      '<g class="squash">' +
-      '<g class="spin">' +
-      earsMarkup(traits, palette) +
-      body +
-      '<g clip-path="url(#' +
-      clip +
-      ')">' +
-      patternMarkup(traits, palette) +
-      '<ellipse class="shimmer" cx="-24" cy="-24" rx="26" ry="14" fill="#fff" opacity="0" transform="rotate(-28 -24 -24)"/>' +
+      '<svg class="monster-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-150 -158 300 328" shape-rendering="crispEdges" role="img" aria-label="Monster">' +
+      '<g class="shadow" opacity="0.4">' +
+      shadow +
       "</g>" +
-      faceMarkup(traits.eyes) +
-      "</g></g></g>" +
+      '<g class="rig"><g class="squash"><g class="spin">' +
+      bodyRects.join("") +
+      '<g class="shimmer" opacity="0">' +
+      shineRects.join("") +
+      "</g></g></g></g>" +
       '<g class="fx fx-kick" opacity="0">' +
-      '<path d="M-36 0C-38-22-6-28 16-16L40-6C52 0 50 18 34 20L-24 22C-44 20-46 8-36 0Z" fill="#FF8A5B" stroke="' +
-      INK +
-      '" stroke-width="5" stroke-linejoin="round"/>' +
-      '<path d="M-22 12H32" stroke="' +
-      INK +
-      '" stroke-width="4" stroke-linecap="round"/>' +
+      boot +
       "</g>" +
       '<g class="fx fx-punch" opacity="0">' +
-      '<circle cx="-16" cy="-22" r="13" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<circle cx="2" cy="-28" r="14" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<circle cx="20" cy="-20" r="13" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<circle cx="0" cy="2" r="28" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<ellipse cx="30" cy="10" rx="12" ry="16" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<rect x="-14" y="22" width="28" height="16" rx="8" fill="#FFD3B6" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
+      fist +
       "</g>" +
       '<g class="fx fx-heat" opacity="0">' +
-      '<rect x="-118" y="-22" width="58" height="40" rx="12" fill="' +
-      INK +
-      '"/>' +
-      '<rect x="-68" y="-14" width="26" height="24" rx="7" fill="#FF8A5B" stroke="' +
-      INK +
-      '" stroke-width="4"/>' +
-      '<path d="M-36-16 q16 16 0 32" fill="none" stroke="#FF8A5B" stroke-width="5" stroke-linecap="round"/>' +
-      '<path d="M-18-22 q18 22 0 44" fill="none" stroke="#FFB088" stroke-width="5" stroke-linecap="round"/>' +
+      heat +
       "</g>" +
       '<g class="drips">' +
-      '<ellipse class="drip" cx="-18" cy="48" rx="7" ry="9" fill="' +
-      palette.body +
-      '" stroke="' +
-      INK +
-      '" stroke-width="3" opacity="0"/>' +
-      '<ellipse class="drip" cx="8" cy="48" rx="6" ry="8" fill="' +
-      palette.body +
-      '" stroke="' +
-      INK +
-      '" stroke-width="3" opacity="0"/>' +
-      '<ellipse class="drip" cx="28" cy="48" rx="5" ry="7" fill="' +
-      palette.deep +
-      '" stroke="' +
-      INK +
-      '" stroke-width="3" opacity="0"/>' +
+      '<rect class="drip" x="-20" y="24" width="' + PX + '" height="' + (PX * 2) + '" fill="' + pal.body + '" opacity="0"/>' +
+      '<rect class="drip" x="10" y="24" width="' + PX + '" height="' + (PX * 2) + '" fill="' + pal.body + '" opacity="0"/>' +
+      '<rect class="drip" x="30" y="24" width="' + PX + '" height="' + (PX * 2) + '" fill="' + pal.deep + '" opacity="0"/>' +
       "</g>" +
       '<g class="puddle" display="none">' +
-      '<ellipse cx="0" cy="64" rx="96" ry="30" fill="' +
-      palette.body +
-      '" stroke="' +
-      INK +
-      '" stroke-width="5"/>' +
-      '<ellipse cx="0" cy="70" rx="46" ry="14" fill="' +
-      palette.belly +
-      '"/>' +
-      puddleEyes +
+      puddle +
       "</g>" +
       "</svg>"
     );
   }
 
-  var FEET = 74;
 
   function scaleFor(restCount) {
     var n = restCount || 0;
@@ -366,8 +525,12 @@
     );
     if (shadow) {
       var spread = 54 + Math.max(0, 1 - scaleY) * 40 + Math.max(0, -y) * 0.08;
-      shadow.setAttribute("rx", String(spread));
-      var liftFade = Math.max(0.05, 0.16 + Math.min(0, y) / 500);
+      var sx = spread / 54;
+      shadow.setAttribute(
+        "transform",
+        "translate(0 96) scale(" + sx.toFixed(3) + " 1) translate(0 -96)"
+      );
+      var liftFade = Math.max(0.06, 0.42 + Math.min(0, y) / 260);
       shadow.setAttribute("opacity", String(liftFade));
     }
   }
@@ -516,7 +679,7 @@
         if (shimmer) shimmer.setAttribute("opacity", String(0.15 + 0.45 * Math.abs(Math.sin(raw * Math.PI * 5))));
         drips.forEach(function (drip, index) {
           var u = Math.min(1, Math.max(0, (raw - index * 0.16) / 0.7));
-          drip.setAttribute("cy", String(36 + u * 46));
+          drip.setAttribute("y", String(24 + u * 50));
           drip.setAttribute("opacity", String(Math.sin(u * Math.PI)));
         });
       }
@@ -555,7 +718,7 @@
         puddle.removeAttribute("display");
         puddle.setAttribute("opacity", String(p));
         var s = 0.45 + 0.55 * p;
-        puddle.setAttribute("transform", "translate(0 64) scale(1 " + s + ") translate(0 -64)");
+        puddle.setAttribute("transform", "translate(0 60) scale(1 " + s + ") translate(0 -60)");
       }
       setPose(svg, { scaleY: after * (1 - p * 0.4), x: 0, y: 10 * p, rot: 0 });
     }, alive).then(function () {
@@ -577,7 +740,5 @@
     play: play,
     melt: melt,
     settle: settle,
-    namesEn: NAMES_EN,
-    namesZh: NAMES_ZH,
   };
 });

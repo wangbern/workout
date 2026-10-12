@@ -1,11 +1,10 @@
 (function () {
   var CONFIG = window.MONSTER_CONFIG;
   var COPY = {
-    title: { en: "Auntie's Workout Tracker", zh: "阿姨的健身记录" },
+    title: { en: "Liping's Workout Tracker", zh: "立平的健身记录" },
     who: { en: "Who Are You?", zh: "你是哪一位？" },
-    switchName: { en: "Switch Name", zh: "换一个人" },
+    switchName: { en: "Switch User", zh: "换用户" },
     waiting: { en: "waiting...", zh: "等待" },
-    you: { en: "You", zh: "你" },
     leg: { en: "Legs", zh: "练腿" },
     chest: { en: "Chest/Cardio", zh: "胸/有氧" },
     back: { en: "Back", zh: "练背" },
@@ -20,10 +19,17 @@
       en: "Add the Apps Script web app URL in config.js.",
       zh: "请把 Apps Script 网页应用链接填进 config.js。",
     },
+    replay: { en: "Replay", zh: "重播" },
+    prevDay: { en: "Previous day", zh: "前一天" },
+    nextDay: { en: "Next day", zh: "后一天" },
+    prevUser: { en: "Previous user", zh: "上一位" },
+    nextUser: { en: "Next user", zh: "下一位" },
+    chooseUser: { en: "Choose this user", zh: "选这位" },
     langGroup: { en: "Language", zh: "语言" },
     recap: { en: "Recap", zh: "回顾" },
     recapClose: { en: "Close", zh: "关闭" },
     recapEmpty: { en: "No monsters defeated this week.", zh: "这周没有击败怪物。" },
+    sheet: { en: "Sheet connection", zh: "表格连接" },
   };
 
   var OPTION_IDS = ["leg", "chest", "back", "rest"];
@@ -47,6 +53,8 @@
   var played = {};
   var visualPlayers = new Set();
   var visualOptions = new Map();
+  var browsePlayers = new Set();
+  var browseOptions = new Map();
   var localAnimated = null;
   var optimistic = null;
   var monsterDay = "";
@@ -55,25 +63,44 @@
   var polledEnd = "";
   var recapGen = 0;
   var recapDayId = "";
+  var quietUntil = 0;
+  var typeTarget = "";
+  var typeTimer = 0;
+  var viewOffset = 0;
+  var VIEW_MIN = -21;
+  var VIEW_MAX = 7;
+  var picking = false;
+  var pickIndex = 0;
 
   var el = {
     title: document.getElementById("title"),
+    title2: document.getElementById("title-2"),
+    titleEdge: document.getElementById("title-edge"),
+    titleEdge2: document.getElementById("title-edge-2"),
     langGroup: document.getElementById("lang-group"),
-    langEn: document.getElementById("lang-en"),
-    langZh: document.getElementById("lang-zh"),
-    pick: document.getElementById("screen-pick"),
-    home: document.getElementById("screen-home"),
+    langToggle: document.getElementById("lang-toggle"),
     who: document.getElementById("who"),
     choices: document.getElementById("who-choices"),
     name: document.getElementById("monster-name"),
+    descLive: document.getElementById("desc-live"),
+    homeStage: document.getElementById("home-stage"),
+    pickStage: document.getElementById("pick-stage"),
+    signal: document.getElementById("signal"),
+    battFill: document.getElementById("batt-fill"),
     pips: document.getElementById("pips"),
+    battery: document.getElementById("battery"),
     remain: document.getElementById("remain"),
     localEnd: document.getElementById("local-end"),
     bothEnd: document.getElementById("both-end"),
-    people: document.getElementById("people"),
     hint: document.getElementById("hint"),
+    figures: document.getElementById("figures"),
     options: document.getElementById("options"),
     switchName: document.getElementById("switch-name"),
+    replay: document.getElementById("replay"),
+    dayPrev: document.getElementById("day-prev"),
+    dayNext: document.getElementById("day-next"),
+    futureMark: document.getElementById("future-mark"),
+    lcd: document.querySelector(".lcd"),
     recap: document.getElementById("recap"),
     recapLayer: document.getElementById("recap-layer"),
     recapViewport: document.getElementById("recap-viewport"),
@@ -203,7 +230,24 @@
     }
     var checkins = [];
     var weekDefeated = [];
+    var weekCheckins = null;
     var seen = {};
+    var seenWeek = {};
+    if (Array.isArray(raw.weekCheckins)) {
+      weekCheckins = [];
+      raw.weekCheckins.forEach(function (c) {
+        if (!c || typeof c.dayId !== "string" || !c.dayId) return;
+        if (!playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
+        var key = c.dayId + "|" + c.playerId;
+        if (seenWeek[key]) return;
+        seenWeek[key] = true;
+        weekCheckins.push({
+          dayId: c.dayId,
+          playerId: c.playerId,
+          option: c.option,
+        });
+      });
+    }
     if (Array.isArray(raw.weekDefeated)) {
       raw.weekDefeated.forEach(function (id) {
         if (typeof id === "string" && id) weekDefeated.push(id);
@@ -226,6 +270,7 @@
       serverNow: String(raw.serverNow),
       checkins: checkins,
       weekDefeated: weekDefeated,
+      weekCheckins: weekCheckins,
     };
   }
 
@@ -274,6 +319,7 @@
       serverNow: window.MonsterDay.formatIso(new Date()),
       checkins: state && state.dayId === w.dayId ? state.checkins : [],
       weekDefeated: (state && state.weekDefeated) || [],
+      weekCheckins: state && Array.isArray(state.weekCheckins) ? state.weekCheckins : null,
       provisional: true,
     };
     if (!state || state.dayId !== next.dayId) {
@@ -332,8 +378,10 @@ function startDay(next, silentAdopt) {
     }
     savePlayed();
     prunePlayed(next.dayId);
-    drawMonster(next.dayId);
-    settleAll();
+    if (viewOffset === 0) {
+      drawMonster(next.dayId);
+      settleAll();
+    }
     consider(next.checkins);
   }
 
@@ -359,6 +407,15 @@ function consider(checkins) {
     fresh.sort(function (a, b) {
       return String(a.loggedAt).localeCompare(String(b.loggedAt));
     });
+    if (viewOffset !== 0) {
+      fresh.forEach(function (c) {
+        played[c.playerId] = c.loggedAt;
+        visualPlayers.add(c.playerId);
+        visualOptions.set(c.playerId, c.option);
+      });
+      savePlayed();
+      return;
+    }
     fresh.forEach(function (c) {
       enqueueHit(c, true);
     });
@@ -400,9 +457,19 @@ function consider(checkins) {
       alive: function () { return gen === animGen && svg.isConnected; },
     }).then(function () {
       if (gen !== animGen) return;
-      visualPlayers.add(c.playerId);
-      visualOptions.set(c.playerId, c.option);
-      settleAll();
+      if (viewOffset === 0) {
+        visualPlayers.add(c.playerId);
+        visualOptions.set(c.playerId, c.option);
+        settleAll();
+      } else {
+        browsePlayers.add(c.playerId);
+        browseOptions.set(c.playerId, c.option);
+        var rest = countRest(browseOptions);
+        document.querySelectorAll(".monster-svg").forEach(function (svg) {
+          window.MonsterArt.settle(svg, { defeated: browsePlayers.size >= 3, restCount: rest });
+        });
+        setHp(browsePlayers.size);
+      }
       if (pendingAnims <= 1 && wrap) wrap.classList.remove("acting");
     });
   }
@@ -529,6 +596,135 @@ function consider(checkins) {
 
   function pacificNow() {
     return new Date(Date.now() + offsetMs);
+  }
+
+  function viewedDay() {
+    var today = window.MonsterDay.dayWindow(pacificNow(), CONFIG.timezoneA, CONFIG.resetHour);
+    if (viewOffset === 0) return today;
+    var probe = new Date(Date.parse(today.startsAt) + viewOffset * 86400000 + 12 * 3600000);
+    return window.MonsterDay.dayWindow(probe, CONFIG.timezoneA, CONFIG.resetHour);
+  }
+
+  function checkinsForDay(dayId) {
+    var today = window.MonsterDay.dayWindow(pacificNow(), CONFIG.timezoneA, CONFIG.resetHour);
+    if (dayId === today.dayId) return shownCheckins();
+    var out = [];
+    var seen = {};
+    function add(c) {
+      if (!c || c.dayId !== dayId) return;
+      if (!playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
+      if (seen[c.playerId]) return;
+      seen[c.playerId] = true;
+      out.push({ playerId: c.playerId, option: c.option, loggedAt: c.loggedAt || "" });
+    }
+    if (state && Array.isArray(state.weekCheckins)) state.weekCheckins.forEach(add);
+    else {
+      var cached = readFigureCache();
+      if (cached && Array.isArray(cached.checkins)) cached.checkins.forEach(add);
+    }
+    return out;
+  }
+
+  function optionAreas(option) {
+    return {
+      leg: option === "leg",
+      chest: option === "chest",
+      back: option === "back",
+      rest: option === "rest",
+    };
+  }
+
+  function paintSettled(dayId, checks) {
+    drawMonster(dayId);
+    var rest = 0;
+    checks.forEach(function (c) {
+      if (c.option === "rest") rest += 1;
+    });
+    document.querySelectorAll(".monster-svg").forEach(function (svg) {
+      window.MonsterArt.settle(svg, { defeated: checks.length >= 3, restCount: rest });
+    });
+    setHp(distinctCheckins(checks));
+  }
+
+  function syncBrowse() {
+    var future = viewOffset > 0;
+    el.lcd.classList.toggle("is-future", future && !picking);
+    el.futureMark.hidden = !future || picking;
+    el.replay.disabled = !picking && future;
+    el.dayPrev.disabled = !picking && viewOffset <= VIEW_MIN;
+    el.dayNext.disabled = !picking && viewOffset >= VIEW_MAX;
+    if (viewOffset === 0) {
+      if (state && monsterDay !== state.dayId) {
+        drawMonster(state.dayId);
+        settleAll();
+      }
+      return;
+    }
+    if (future) return;
+    var day = viewedDay();
+    if (monsterDay !== day.dayId) paintSettled(day.dayId, checkinsForDay(day.dayId));
+  }
+
+  function stepPick(delta) {
+    var order = figureOrder();
+    var current = CONFIG.players[pickIndex];
+    var i = 0;
+    order.forEach(function (p, idx) {
+      if (current && p.id === current.id) i = idx;
+    });
+    var next = order[(i + delta + order.length) % order.length];
+    CONFIG.players.forEach(function (p, idx) {
+      if (p.id === next.id) pickIndex = idx;
+    });
+    render();
+  }
+
+  function confirmPick() {
+    var chosen = CONFIG.players[pickIndex];
+    if (!chosen) return;
+    picking = false;
+    setPlayer(chosen.id);
+  }
+
+  function stepDay(delta) {
+    var next = viewOffset + delta;
+    if (next < VIEW_MIN || next > VIEW_MAX) return;
+    viewOffset = next;
+    animGen += 1;
+    pendingAnims = 0;
+    animChain = Promise.resolve();
+    monsterDay = "";
+    render();
+  }
+
+  function replayView() {
+    if (viewOffset > 0) return;
+    var day = viewedDay();
+    var checks = checkinsForDay(day.dayId).slice();
+    var restorePlayers = visualPlayers;
+    var restoreOptions = visualOptions;
+    var browsing = viewOffset !== 0;
+    animGen += 1;
+    var gen = animGen;
+    pendingAnims = 0;
+    animChain = Promise.resolve();
+    if (browsing) {
+      browsePlayers = new Set();
+      browseOptions = new Map();
+    } else {
+      visualPlayers = new Set();
+      visualOptions = new Map();
+    }
+    paintSettled(day.dayId, []);
+    checks.forEach(function (c) { enqueueHit(c, false); });
+    if (!browsing) {
+      animChain = animChain.then(function () {
+        if (gen !== animGen) {
+          visualPlayers = restorePlayers;
+          visualOptions = restoreOptions;
+        }
+      });
+    }
   }
 
   function recapOpen() {
@@ -704,6 +900,14 @@ function consider(checkins) {
     if (!state || !state.endsAt) return;
     var left = Date.parse(state.endsAt) - (Date.now() + offsetMs);
     el.remain.textContent = formatRemain(left);
+    var startMs = Date.parse(state.startsAt);
+    var endMs = Date.parse(state.endsAt);
+    var span = endMs - startMs;
+    var pct = span > 0 ? Math.max(0, Math.min(1, left / span)) : 0;
+    if (el.battFill) {
+      el.battFill.style.width = (pct * 100).toFixed(1) + "%";
+      el.battFill.classList.toggle("is-low", pct > 0 && pct < 0.15);
+    }
     if (left <= 0 && polledEnd !== state.endsAt && writes === 0) {
       polledEnd = state.endsAt;
       poll();
@@ -711,6 +915,7 @@ function consider(checkins) {
   }
 
   function statusKey() {
+    if (Date.now() < quietUntil) return "quiet";
     if (sheetError) return "quiet";
     var n = shownCheckins().length;
     if (n >= 3) return "defeated";
@@ -722,7 +927,7 @@ function consider(checkins) {
 
   function armStatusTimer() {
     clearTimeout(statusTimer);
-    var waits = [slipUntil, savedUntil]
+    var waits = [slipUntil, savedUntil, quietUntil]
       .map(function (t) { return t - Date.now(); })
       .filter(function (ms) { return ms > 0; });
     if (!waits.length) return;
@@ -733,31 +938,173 @@ function consider(checkins) {
     }, delay);
   }
 
-  function renderPips() {
-    var n = visualPlayers.size;
-    var html = "";
-    for (var i = 0; i < 3; i++) {
-      html += '<span class="pip' + (i < n ? " on" : "") + '"></span>';
-    }
-    el.pips.innerHTML = html;
+  var POSE = { p1: "auntie", p2: "shelby", p3: "bernice" };
+
+  // Legs, chest, and back stay filled for the monster week. A finished set
+  // (all three) or a new week clears that person back to gray. Rest paints
+  // the unfilled parts pink and stays until the same reset.
+  function cycleAreas(options) {
+    var got = { leg: false, chest: false, back: false };
+    var rest = false;
+    var done = false;
+    options.forEach(function (option) {
+      if (done) {
+        got = { leg: false, chest: false, back: false };
+        rest = false;
+        done = false;
+      }
+      if (option === "rest") rest = true;
+      else if (option === "leg" || option === "chest" || option === "back") got[option] = true;
+      if (got.leg && got.chest && got.back) done = true;
+    });
+    if (done) return { leg: false, chest: false, back: false, rest: false };
+    return { leg: got.leg, chest: got.chest, back: got.back, rest: rest };
   }
 
-  function renderPeople() {
-    var chosen = {};
-    shownCheckins().forEach(function (c) { chosen[c.playerId] = c.option; });
-    el.people.innerHTML = CONFIG.players.map(function (p) {
-      var opt = chosen[p.id];
-      var move = opt ? t(opt) : t("waiting");
-      var you = p.id === playerId
-        ? '<span class="you-badge">' + t("you") + "</span>"
-        : "";
+  function figureWeekIds() {
+    var day = window.MonsterDay.dayWindow(pacificNow(), CONFIG.timezoneA, CONFIG.resetHour);
+    return window.MonsterDay.weekDayIds(new Date(day.dayId), CONFIG.timezoneA, CONFIG.resetHour);
+  }
+
+  function readFigureCache() {
+    var raw = storageGet("monster.figureWeek");
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  function figureRows() {
+    var ids = figureWeekIds();
+    var allow = {};
+    ids.forEach(function (id) { allow[id] = true; });
+    var map = {};
+    function add(row) {
+      if (!row || !allow[row.dayId] || !playerById(row.playerId)) return;
+      if (OPTION_IDS.indexOf(row.option) < 0) return;
+      map[row.dayId + "|" + row.playerId] = {
+        dayId: row.dayId,
+        playerId: row.playerId,
+        option: row.option,
+      };
+    }
+    if (state && Array.isArray(state.weekCheckins)) {
+      state.weekCheckins.forEach(add);
+    } else {
+      var cached = readFigureCache();
+      if (cached && cached.weekId === ids[0] && Array.isArray(cached.checkins)) {
+        cached.checkins.forEach(add);
+      }
+      if (state && allow[state.dayId]) {
+        state.checkins.forEach(function (c) {
+          add({ dayId: state.dayId, playerId: c.playerId, option: c.option });
+        });
+      }
+    }
+    var confirmed = Object.keys(map).map(function (key) { return map[key]; });
+    storageSet("monster.figureWeek", JSON.stringify({ weekId: ids[0], checkins: confirmed }));
+    if (state && allow[state.dayId]) {
+      shownCheckins().forEach(function (c) {
+        add({ dayId: state.dayId, playerId: c.playerId, option: c.option });
+      });
+    }
+    return Object.keys(map).map(function (key) { return map[key]; });
+  }
+
+  function areasFor(playerId, rows) {
+    var mine = rows.filter(function (c) { return c.playerId === playerId; });
+    mine.sort(function (a, b) {
+      if (a.dayId < b.dayId) return -1;
+      if (a.dayId > b.dayId) return 1;
+      return 0;
+    });
+    return cycleAreas(mine.map(function (c) { return c.option; }));
+  }
+
+  function figureLabel(p, areas) {
+    var bits = [];
+    if (areas.leg) bits.push(t("leg"));
+    if (areas.chest) bits.push(t("chest"));
+    if (areas.back) bits.push(t("back"));
+    if (areas.rest) bits.push(t("rest"));
+    return playerName(p) + ", " + (bits.length ? bits.join(", ") : t("waiting"));
+  }
+
+  function figureOrder() {
+    var others = [];
+    var me = null;
+    CONFIG.players.forEach(function (p) {
+      if (p.id === playerId) me = p;
+      else others.push(p);
+    });
+    if (!me || others.length < 2) return CONFIG.players.slice();
+    return [others[0], me, others[1]];
+  }
+
+  function renderFigures() {
+    if (viewOffset > 0 && !picking) {
+      el.figures.innerHTML = "";
+      return;
+    }
+    var rows = figureRows();
+    var today = {};
+    var source = viewOffset === 0 ? shownCheckins() : checkinsForDay(viewedDay().dayId);
+    source.forEach(function (c) { today[c.playerId] = c.option; });
+    el.figures.innerHTML = figureOrder().map(function (p) {
+      var areas = viewOffset === 0 ? areasFor(p.id, rows) : optionAreas(today[p.id]);
+      var cls = "hero " + (POSE[p.id] || "auntie");
+      if (areas.rest) cls += " is-rest";
+      if (areas.leg) cls += " area-leg";
+      if (areas.chest) cls += " area-chest";
+      if (areas.back) cls += " area-back";
+      var you = p.id === playerId;
+      var hot = picking && CONFIG.players[pickIndex] && p.id === CONFIG.players[pickIndex].id;
+      var marked = picking ? hot : you;
+      var opt = today[p.id];
+      var zones = (
+        '<i class="zone torso torso-a"></i>' +
+        '<i class="zone torso torso-b"></i>' +
+        '<i class="zone arms arm-a"></i>' +
+        '<i class="zone arms arm-b"></i>' +
+        '<i class="zone legs leg-a"></i>' +
+        '<i class="zone legs leg-b"></i>'
+      );
       return (
-        '<li class="person' + (p.id === playerId ? " is-you" : "") + '">' +
-        '<span class="who-name">' + playerName(p) + you + "</span>" +
-        '<span class="move' + (opt ? " chosen" : "") + '">' + move + "</span>" +
-        "</li>"
+        '<div class="figure' + (you ? " is-you" : "") + (hot ? " is-hot" : "") + (marked ? " is-marked" : "") + '">' +
+        '<div class="' + cls + '" role="img" aria-label="' + figureLabel(p, areas) + '">' +
+        '<div class="layer full"></div>' +
+        '<div class="layer cape"></div>' +
+        '<div class="layer body">' + zones + "</div>" +
+        "</div>" +
+        '<p class="figure-caption">' +
+        '<span class="figure-name">' + playerName(p) + "</span>" +
+        '<span class="figure-sep" aria-hidden="true">|</span>' +
+        '<span class="figure-move' + (opt ? " chosen" : "") + '">' +
+        (opt ? t(opt) : t("waiting")) +
+        "</span>" +
+        "</p>" +
+        "</div>"
       );
     }).join("");
+  }
+
+  function distinctCheckins(checks) {
+    var seen = {};
+    var n = 0;
+    (checks || []).forEach(function (c) {
+      if (!c || !c.playerId || seen[c.playerId]) return;
+      seen[c.playerId] = true;
+      n += 1;
+    });
+    return n;
+  }
+
+  function setHp(count) {
+    var n = Math.max(0, Math.min(3, count));
+    el.pips.style.setProperty("--hp", String((3 - n) / 3));
+  }
+
+  function renderPips() {
+    if (viewOffset !== 0) return;
+    setHp(visualPlayers.size);
   }
 
   function renderOptions() {
@@ -769,7 +1116,7 @@ function consider(checkins) {
       var on = selected === id;
       return (
         '<button type="button" class="option' + (on ? " is-on" : "") + '" data-option="' + id + '"' +
-        (synced ? "" : " disabled") +
+        (synced && !picking ? "" : " disabled") +
         ' aria-pressed="' + (on ? "true" : "false") + '">' +
         t(id) +
         "</button>"
@@ -802,18 +1149,72 @@ function consider(checkins) {
     tick();
   }
 
+  function typeTo(text) {
+    if (text === typeTarget) return;
+    typeTarget = text;
+    clearInterval(typeTimer);
+    if (prefersReduced()) {
+      el.name.textContent = text;
+      el.name.classList.add("is-done");
+      if (el.descLive) el.descLive.textContent = text;
+      return;
+    }
+    var i = 0;
+    el.name.textContent = "";
+    el.name.classList.remove("is-done");
+    typeTimer = setInterval(function () {
+      i += 1;
+      el.name.textContent = typeTarget.slice(0, i);
+      if (i >= typeTarget.length) {
+        clearInterval(typeTimer);
+        el.name.classList.add("is-done");
+        if (el.descLive && el.descLive.textContent !== typeTarget) {
+          el.descLive.textContent = typeTarget;
+        }
+      }
+    }, 28);
+  }
+
   function renderStatus() {
-    el.name.textContent = t(statusKey());
+    if (!playerId) {
+      typeTo(t("who"));
+      return;
+    }
+    if (viewOffset !== 0) {
+      var day = viewedDay();
+      typeTo(window.MonsterDay.weekdayLabel(new Date(day.dayId), CONFIG.timezoneA, lang));
+      return;
+    }
+    typeTo(t(statusKey()));
+  }
+
+  function renderSignal() {
+    var on = !!(synced && !sheetError && scriptUrl());
+    el.signal.classList.toggle("is-on", on);
+    el.signal.setAttribute("aria-pressed", on ? "true" : "false");
+    el.signal.setAttribute("aria-label", t("sheet"));
   }
 
   function render() {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
     document.title = t("title");
-    el.title.textContent = t("title");
+    var titleText = t("title");
+    var titleLines = titleText.split(" ");
+    var line1 = titleLines.length > 2 ? titleLines.slice(0, 2).join(" ") : titleText;
+    var line2 = titleLines.length > 2 ? titleLines.slice(2).join(" ") : "";
+    el.title.textContent = line1;
+    el.title2.textContent = line2;
+    el.titleEdge.textContent = line1;
+    el.titleEdge2.textContent = line2;
+    var y1 = line2 ? "32" : "48";
+    el.title.setAttribute("y", y1);
+    el.titleEdge.setAttribute("y", y1);
     el.langGroup.setAttribute("aria-label", t("langGroup"));
-    el.langEn.setAttribute("aria-pressed", lang === "en" ? "true" : "false");
-    el.langZh.setAttribute("aria-pressed", lang === "zh" ? "true" : "false");
-    el.recap.textContent = t("recap");
+    el.langToggle.textContent = lang === "zh" ? "EN" : "中文";
+    el.dayPrev.setAttribute("aria-label", t(picking ? "prevUser" : "prevDay"));
+    el.dayNext.setAttribute("aria-label", t(picking ? "nextUser" : "nextDay"));
+    el.replay.setAttribute("aria-label", t(picking ? "chooseUser" : "replay"));
+    el.recap.setAttribute("aria-label", t("recap"));
     updateRecapEnabled();
     el.recapClose.textContent = t("recapClose");
     if (!el.recapLayer.hidden) {
@@ -826,14 +1227,17 @@ function consider(checkins) {
     el.hint.hidden = !showHint;
     if (showHint) el.hint.textContent = t("hint");
     renderClock();
-    renderPeople();
+    renderFigures();
     renderOptions();
     renderChoices();
     renderPips();
+    renderSignal();
     renderStatus();
-    var picking = !playerId;
-    el.pick.hidden = !picking;
-    el.home.hidden = picking;
+    syncBrowse();
+    el.homeStage.hidden = false;
+    el.pickStage.hidden = true;
+    el.options.hidden = false;
+    el.choices.hidden = true;
   }
 
   function setLang(next) {
@@ -849,15 +1253,48 @@ function consider(checkins) {
     render();
   }
 
-  el.langEn.addEventListener("click", function () { setLang("en"); });
-  el.langZh.addEventListener("click", function () { setLang("zh"); });
+  el.langToggle.addEventListener("click", function () {
+    setLang(lang === "en" ? "zh" : "en");
+  });
+  el.replay.addEventListener("click", function () {
+    if (picking) confirmPick();
+    else replayView();
+  });
+  el.dayPrev.addEventListener("click", function () {
+    if (picking) stepPick(-1);
+    else stepDay(-1);
+  });
+  el.dayNext.addEventListener("click", function () {
+    if (picking) stepPick(1);
+    else stepDay(1);
+  });
   el.recap.addEventListener("click", function () { startRecap(); });
+  el.signal.addEventListener("click", function () {
+    if (synced && !sheetError && scriptUrl()) return;
+    quietUntil = Date.now() + 5200;
+    typeTarget = "";
+    renderStatus();
+    armStatusTimer();
+    poll();
+  });
+  el.battery.addEventListener("click", function () {
+    el.remain.classList.remove("is-pop");
+    void el.remain.offsetWidth;
+    el.remain.classList.add("is-pop");
+  });
+  el.remain.addEventListener("animationend", function () {
+    el.remain.classList.remove("is-pop");
+  });
   el.recapLayer.addEventListener("click", function () { stopRecap(); });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && !el.recapLayer.hidden) stopRecap();
   });
   el.switchName.addEventListener("click", function () {
-    playerId = "";
+    picking = true;
+    pickIndex = 0;
+    CONFIG.players.forEach(function (p, i) {
+      if (p.id === playerId) pickIndex = i;
+    });
     render();
   });
   el.choices.addEventListener("click", function (event) {
@@ -880,6 +1317,7 @@ function consider(checkins) {
   lang = detectLang();
   var storedPlayer = storageGet("monster.player");
   if (playerById(storedPlayer)) playerId = storedPlayer;
+  else picking = true;
   if (!scriptUrl()) sheetError = true;
 
   showFallback();

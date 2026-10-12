@@ -3,51 +3,143 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#FFF6E8">
+  <meta name="theme-color" content="#8ec8f0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Monster Day">
-  <title>Monster Day</title>
+  <meta name="apple-mobile-web-app-title" content="Liping's Workout">
+  <title>Liping's Workout Tracker</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
 </head>
 <body>
-  <div class="app">
-    <header class="top">
-      <h1 id="title">Monster Day</h1>
-      <div class="top-tools">
-        <div class="langs" role="group" id="lang-group">
-          <button type="button" id="lang-en" aria-pressed="true">EN</button>
-          <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+  <div class="page-bg" aria-hidden="true"></div>
+  <div id="view"></div>
+
+  <div id="phone-face">
+    <div class="top-half">
+    <div class="crest">
+      <div class="earpiece" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="lens" aria-hidden="true"></div>
+      <h1 class="title-sticker">
+        <svg viewBox="0 0 420 74" width="400" height="70" role="presentation">
+          <defs>
+            <linearGradient id="holo" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="150" y2="28" spreadMethod="repeat">
+              <stop offset="0%" stop-color="#c5ced6"/>
+              <stop offset="14%" stop-color="#f6f3f0"/>
+              <stop offset="28%" stop-color="#e7cfd8"/>
+              <stop offset="44%" stop-color="#f7f8fb"/>
+              <stop offset="58%" stop-color="#c5dce8"/>
+              <stop offset="74%" stop-color="#ddd4e8"/>
+              <stop offset="88%" stop-color="#eef2f5"/>
+              <stop offset="100%" stop-color="#c5ced6"/>
+              <animate attributeName="x1" values="0;150" dur="3.2s" repeatCount="indefinite"/>
+              <animate attributeName="x2" values="150;300" dur="3.2s" repeatCount="indefinite"/>
+            </linearGradient>
+          </defs>
+          <text id="title-edge" class="title-edge" x="210" y="32" text-anchor="middle" aria-hidden="true"></text>
+          <text id="title-edge-2" class="title-edge" x="210" y="60" text-anchor="middle" aria-hidden="true"></text>
+          <text id="title" class="title-fill" x="210" y="32" text-anchor="middle" fill="url(#holo)"></text>
+          <text id="title-2" class="title-fill" x="210" y="60" text-anchor="middle" fill="url(#holo)"></text>
+        </svg>
+      </h1>
+    </div>
+
+    <div class="bezel">
+      <div class="lcd">
+        <button type="button" id="signal" class="hud signal" aria-pressed="false">
+          <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </button>
+        <button type="button" id="recap" class="hud mail" disabled>
+          <svg viewBox="0 0 28 20" width="42" height="30" aria-hidden="true">
+            <rect x="1.6" y="1.6" width="24.8" height="16.8" rx="2" fill="none" stroke="currentColor" stroke-width="2.2"/>
+            <path d="M2.4 3.2 L14 11.4 L25.6 3.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <button type="button" id="battery" class="batt-block">
+          <span class="batt" aria-hidden="true">
+            <span id="batt-fill" class="batt-fill"></span>
+            <span class="batt-nub"></span>
+          </span>
+          <span id="remain" class="batt-label main"></span>
+        </button>
+        <p id="local-end" class="sr-only"></p>
+        <p id="both-end" class="sr-only"></p>
+
+        <div class="anchor-monster">
+          <div class="stage-wrap">
+            <div id="home-stage" class="stage"></div>
+            <div id="pick-stage" class="stage" hidden></div>
+          </div>
+          <div id="pips" class="hp" style="--hp: 1" aria-hidden="true"><span class="hp-fill"></span></div>
         </div>
-        <button type="button" id="recap" class="recap-btn" disabled>Recap</button>
-      </div>
-    </header>
 
-    <section id="screen-pick" class="screen" hidden>
-      <div id="pick-stage" class="stage"></div>
-      <h2 id="who"></h2>
-      <div id="who-choices" class="choices"></div>
-    </section>
+        <div id="figures" class="figures anchor-figures"></div>
+        <p id="future-mark" class="future-mark" hidden>?</p>
 
-    <section id="screen-home" class="screen home" hidden>
-      <div class="stage-wrap">
-        <div id="home-stage" class="stage"></div>
+        <p id="hint" class="hint" hidden></p>
+        <p id="monster-name" class="lcd-desc"></p>
+        <p id="desc-live" class="sr-only" aria-live="polite"></p>
       </div>
-      <p id="monster-name" class="monster-name" aria-live="polite"></p>
-      <div id="pips" class="pips"></div>
-      <div class="clock">
-        <p id="remain" class="remain"></p>
-        <p id="local-end" class="local-end"></p>
-        <p id="both-end" class="both-end"></p>
+    </div>
+    </div>
+
+    <div class="hinge-gap" aria-hidden="true"></div>
+
+    <div class="bottom-half">
+    <div class="deck">
+      <div class="deck-top">
+        <button type="button" id="switch-name" class="deck-side"></button>
+        <button type="button" id="lang-toggle" class="deck-side">中文</button>
       </div>
-      <ul id="people" class="people"></ul>
-      <p id="hint" class="hint" hidden></p>
+      <div class="deck-nav">
+        <button type="button" id="day-prev" class="deck-arrow deck-arrow-prev" aria-label="Previous day">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <path fill="url(#arrow-key)" stroke="#6d90b0" stroke-width="1.25" vector-effect="non-scaling-stroke" d="M 29.47 39.27 L 74.63 16.68 A 12 12 0 0 1 92 27.42 L 92 72.58 A 12 12 0 0 1 74.63 83.32 L 29.47 60.73 A 12 12 0 0 1 29.47 39.27 Z"/>
+          </svg>
+        </button>
+        <button type="button" id="replay" class="deck-replay" aria-label="Replay"></button>
+        <button type="button" id="day-next" class="deck-arrow deck-arrow-next" aria-label="Next day">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <path fill="url(#arrow-key)" stroke="#6d90b0" stroke-width="1.25" vector-effect="non-scaling-stroke" d="M 70.53 39.27 L 25.37 16.68 A 12 12 0 0 0 8 27.42 L 8 72.58 A 12 12 0 0 0 25.37 83.32 L 70.53 60.73 A 12 12 0 0 0 70.53 39.27 Z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="keypad">
+      <h2 id="who" class="sr-only"></h2>
       <div id="options" class="options"></div>
-      <button type="button" id="switch-name" class="linkish"></button>
-    </section>
+      <div id="who-choices" class="choices" role="group" aria-labelledby="who" hidden></div>
+      <div class="mic" aria-hidden="true"></div>
+    </div>
+    </div>
   </div>
+
+  <svg class="deck-arrow-defs" width="0" height="0" aria-hidden="true">
+    <defs>
+      <linearGradient id="arrow-key" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f8fbff"/>
+        <stop offset="46%" stop-color="#d7e4f2"/>
+        <stop offset="88%" stop-color="#b5cce2"/>
+        <stop offset="100%" stop-color="#8eabc8"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div id="lang-group" class="sr-only" role="group"></div>
+
   <div id="recap-layer" class="recap-layer" hidden role="dialog" aria-modal="true" aria-labelledby="recap-caption">
     <div id="recap-viewport" class="recap-viewport">
       <button type="button" id="recap-close" class="recap-close">Close</button>
@@ -55,9 +147,11 @@
       <p id="recap-caption" class="recap-caption" aria-live="polite"></p>
     </div>
   </div>
+
   <script src="config.js"></script>
   <script src="day.js"></script>
   <script src="monster.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="phone.js"></script>
 </body>
 </html>

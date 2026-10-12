@@ -8,7 +8,9 @@
  *
  * Keep TIME_ZONE and RESET_HOUR in step with config.js.
  * Sunday recap reads weekDefeated: monsters all three finished,
- * Monday through Sunday in Pacific time. Redeploy after pasting.
+ * Monday through Sunday in Pacific time.
+ * weekCheckins is this monster week's rows, Monday 8:00am through
+ * Sunday, so the page can color each person's figure. Redeploy after pasting.
  * The reset minute is 00. The window ends at the next 8:00am Pacific,
  * so daylight-saving nights are 23 or 25 hours and the Beijing label shifts.
  */
@@ -58,11 +60,23 @@ function readState_() {
   var window = dayWindow_(now);
   var groups = readGrouped_();
   var week = weekDayIds_(now);
+  var figureWeek = weekDayIds_(window.start);
   var need = Object.keys(PLAYERS).length;
   var defeated = [];
+  var weekCheckins = [];
   for (var i = 0; i < week.length; i++) {
     var rows = groups[week[i]] || [];
     if (rows.length >= need) defeated.push(week[i]);
+  }
+  for (var f = 0; f < figureWeek.length; f++) {
+    var figureRows = groups[figureWeek[f]] || [];
+    for (var r = 0; r < figureRows.length; r++) {
+      weekCheckins.push({
+        dayId: figureWeek[f],
+        playerId: figureRows[r].playerId,
+        option: figureRows[r].option,
+      });
+    }
   }
   return {
     dayId: window.dayId,
@@ -71,6 +85,7 @@ function readState_() {
     serverNow: formatIso_(now),
     checkins: groups[window.dayId] || [],
     weekDefeated: defeated,
+    weekCheckins: weekCheckins,
   };
 }
 
@@ -227,5 +242,6 @@ function dayWindow_(now) {
     dayId: formatIso_(start),
     startsAt: formatIso_(start),
     endsAt: formatIso_(end),
+    start: start,
   };
 }
