@@ -14,6 +14,10 @@
  * PhoneColors stores one shell color per person. Stickers stores where
  * each person stuck a defeated monster. defeatedAll is every day all
  * three finished. Redeploy after pasting.
+ * Passwords are not in this file. Add them under Project Settings → Script
+ * properties as PASSWORD_AUNTIE, PASSWORD_SHELBY and PASSWORD_BERNICE.
+ * The page sends action "login" to check one, and every save must carry
+ * the right password for its player.
  * The reset minute is 00. The window ends at the next 8:00am Pacific,
  * so daylight-saving nights are 23 or 25 hours and the Beijing label shifts.
  */
@@ -43,6 +47,8 @@ function doPost(e) {
 
 function handle_(body) {
   if (!body) return json_(readState_());
+  if (!passwordOk_(body.playerId, body.password)) return json_({ error: "auth" });
+  if (String(body.action || "") === "login") return json_(readState_());
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
@@ -64,6 +70,15 @@ function handle_(body) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function passwordOk_(playerId, password) {
+  var id = String(playerId || "");
+  if (!PLAYERS.hasOwnProperty(id)) return false;
+  var key = "PASSWORD_" + PLAYERS[id].toUpperCase();
+  var want = PropertiesService.getScriptProperties().getProperty(key);
+  if (!want) return false;
+  return String(password || "").trim().toLowerCase() === String(want).trim().toLowerCase();
 }
 
 function readState_() {

@@ -787,6 +787,92 @@ body.no-3d #phone-face {
   filter: drop-shadow(0 0 1px #16325a) drop-shadow(0 0 5px #16325a);
 }
 
+/* Who-are-you screen: the trio takes the middle of the LCD, monster hidden. */
+.lcd.is-picking .anchor-monster { visibility: hidden; }
+
+.lcd.is-picking .figures.anchor-figures {
+  left: 50%;
+  top: 52%;
+  bottom: auto;
+  width: 94%;
+  max-width: none;
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 14px;
+}
+
+.lcd.is-picking .figure:first-child { justify-self: end; }
+.lcd.is-picking .figure:last-child { justify-self: start; }
+.lcd.is-picking .figure .hero { height: 96px; opacity: 0.6; }
+.lcd.is-picking .figure.is-hot .hero {
+  height: 176px;
+  opacity: 1;
+  transform: none;
+  filter: drop-shadow(0 0 1px #16325a) drop-shadow(0 0 6px #fff8d2) drop-shadow(0 0 12px #fff8d2);
+}
+.lcd.is-picking .figure-caption { font-size: 12px; margin-top: 4px; }
+.lcd.is-picking .figure.is-hot .figure-caption { font-size: 15px; }
+.lcd.is-picking .figure-move { display: none; }
+
+/* Password screen: only the chosen figure stays, with the entry box under it. */
+.lcd.is-password .figures.anchor-figures { top: 44%; }
+.lcd.is-password .figure:not(.is-hot) { visibility: hidden; }
+
+.pw-box {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 34px;
+  width: 62%;
+  height: 36px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 8px;
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.28);
+  font-family: "Courier New", monospace;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink);
+  white-space: pre;
+}
+
+.pw-box[hidden] { display: none !important; }
+
+.pw-caret {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 20px;
+  margin-left: 1px;
+  background: currentColor;
+  animation: caret 1s steps(1) infinite;
+}
+
+.pw-box.is-busy .pw-caret { visibility: hidden; }
+
+/* The real field that owns focus and the keyboard. 16px stops iOS zooming. */
+.pw-input {
+  position: fixed;
+  z-index: 0;
+  left: 50%;
+  top: 30%;
+  width: 2px;
+  height: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  opacity: 0;
+  font-size: 16px;
+  pointer-events: none;
+}
+
 .hero {
   --fig: #8d8682;
   --fig-done: #2faf5f;
@@ -1045,6 +1131,12 @@ body.no-3d #phone-face {
   border: 0;
   padding: 0;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 10px rgba(50, 20, 80, 0.12);
+}
+
+.swatch:disabled,
+.sticker-btn:disabled {
+  opacity: 0.4;
+  filter: grayscale(0.7);
 }
 
 .swatch.is-on {

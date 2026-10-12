@@ -25,6 +25,12 @@
     prevUser: { en: "Previous user", zh: "上一位" },
     nextUser: { en: "Next user", zh: "下一位" },
     chooseUser: { en: "Choose this user", zh: "选这位" },
+    pwAsk: { en: "Enter your password.", zh: "请输入密码。" },
+    pwChecking: { en: "Checking...", zh: "正在检查……" },
+    pwWrong: { en: "Wrong password. Try again.", zh: "密码不对，再试一次。" },
+    pwFail: { en: "Couldn't check. Try again.", zh: "没连上，再试一次。" },
+    pwSubmit: { en: "Submit password", zh: "确认密码" },
+    pwLabel: { en: "Password", zh: "密码" },
     langGroup: { en: "Language", zh: "语言" },
     recap: { en: "Recap", zh: "回顾" },
     recapClose: { en: "Close", zh: "关闭" },
@@ -91,6 +97,12 @@
   var VIEW_MAX = 7;
   var picking = false;
   var pickIndex = 0;
+  var password = "";
+  var pwOpen = false;
+  var pwBusy = false;
+  var pwSeq = 0;
+  var pwNote = "";
+  var pwNoteUntil = 0;
 
   var el = {
     title: document.getElementById("title"),
@@ -114,6 +126,9 @@
     bothEnd: document.getElementById("both-end"),
     hint: document.getElementById("hint"),
     figures: document.getElementById("figures"),
+    pwBox: document.getElementById("pw-box"),
+    pwText: document.getElementById("pw-text"),
+    pwInput: document.getElementById("pw-input"),
     options: document.getElementById("options"),
     switchName: document.getElementById("switch-name"),
     replay: document.getElementById("replay"),
@@ -370,15 +385,26 @@
       cache: "no-store",
       signal: ctrl.signal,
     };
+    var login = !!body && body.action === "login";
     if (method === "GET") {
       url = withBust(url);
     } else {
+      if (!login) body.password = password;
       opts.body = JSON.stringify(body);
     }
     return fetch(url, opts).then(function (res) {
       if (!res.ok) throw new Error("quiet");
       return res.json();
     }).then(function (data) {
+      if (data && data.error === "auth") {
+        // A saved password the sheet no longer accepts: ask again.
+        if (!login) {
+          password = "";
+          storageRemove("monster.password");
+          openPicker();
+        }
+        throw new Error("auth");
+      }
       if (!data || data.error || !data.dayId) throw new Error("quiet");
       return cleanState(data);
     }).finally(function () {
@@ -728,6 +754,8 @@ function consider(checkins) {
 
   function syncBrowse() {
     var future = viewOffset > 0;
+    el.lcd.classList.toggle("is-picking", picking);
+    el.lcd.classList.toggle("is-password", pwOpen);
     el.lcd.classList.toggle("is-future", future && !picking);
     el.futureMark.hidden = !future || picking;
     el.replay.disabled = !picking && future;
@@ -746,24 +774,155 @@ function consider(checkins) {
   }
 
   function stepPick(delta) {
-    var order = figureOrder();
-    var current = CONFIG.players[pickIndex];
-    var i = 0;
-    order.forEach(function (p, idx) {
-      if (current && p.id === current.id) i = idx;
+    var n = CONFIG.players.length;
+    var before = pickLayout();
+    pickIndex = (pickIndex + delta + n) % n;
+    render();
+    animatePick(before);
+  }
+
+  // Layout offsets, not screen rects: the face is drawn inside a 3D transform.
+  function pickLayout() {
+    var map = {};
+    el.figures.querySelectorAll(".figure").forEach(function (fig) {
+      var hero = fig.querySelector(".hero");
+      if (!hero) return;
+      map[fig.getAttribute("data-player")] = {
+        x: hero.offsetLeft + hero.offsetWidth / 2,
+        y: hero.offsetTop + hero.offsetHeight,
+        h: hero.offsetHeight,
+        opacity: getComputedStyle(hero).opacity,
+        hot: fig.classList.contains("is-hot"),
+      };
     });
-    var next = order[(i + delta + order.length) % order.length];
-    CONFIG.players.forEach(function (p, idx) {
-      if (p.id === next.id) pickIndex = idx;
+    return map;
+  }
+
+  // Each figure slides and resizes from its old slot. The one that wraps
+  // from one side to the other shrinks and passes behind the other two.
+  function animatePick(before) {
+    if (prefersReduced()) return;
+    var now = pickLayout();
+    var timing = { duration: 380, easing: "cubic-bezier(0.3, 0.7, 0.3, 1)" };
+    el.figures.querySelectorAll(".figure").forEach(function (fig) {
+      var id = fig.getAttribute("data-player");
+      var hero = fig.querySelector(".hero");
+      var from = before[id];
+      var to = now[id];
+      if (!hero || !from || !to || !to.h || !fig.animate) return;
+      var dx = from.x - to.x;
+      var dy = from.y - to.y;
+      var scale = from.h / to.h;
+      var wraps = !from.hot && !to.hot;
+      fig.style.zIndex = wraps ? "0" : to.hot ? "2" : "1";
+      hero.style.transformOrigin = "50% 100%";
+      if (wraps) {
+        fig.animate([
+          { transform: "translate(" + dx + "px, " + dy + "px)" },
+          { transform: "translate(" + (dx / 2) + "px, " + (dy / 2 - 34) + "px)" },
+          { transform: "none" },
+        ], timing);
+        hero.animate([
+          { transform: "scale(" + scale + ")", opacity: from.opacity },
+          { transform: "scale(0.6)", opacity: 0.25 },
+          { transform: "none", opacity: to.opacity },
+        ], timing);
+        return;
+      }
+      fig.animate([
+        { transform: "translate(" + dx + "px, " + dy + "px)" },
+        { transform: "none" },
+      ], timing);
+      hero.animate([
+        { transform: "scale(" + scale + ")", opacity: from.opacity },
+        { transform: "none", opacity: to.opacity },
+      ], timing);
+    });
+  }
+
+  function openPicker() {
+    picking = true;
+    pickIndex = 0;
+    CONFIG.players.forEach(function (p, i) {
+      if (p.id === playerId) pickIndex = i;
     });
     render();
   }
 
+  function focusPassword() {
+    try { el.pwInput.focus({ preventScroll: true }); } catch (e) { el.pwInput.focus(); }
+  }
+
+  // Runs inside the button tap so phones are allowed to raise the keyboard.
   function confirmPick() {
     var chosen = CONFIG.players[pickIndex];
     if (!chosen) return;
-    picking = false;
-    setPlayer(chosen.id);
+    // The most recent login is remembered, so that person walks back in.
+    if (password && chosen.id === playerId) {
+      picking = false;
+      render();
+      return;
+    }
+    pwOpen = true;
+    pwBusy = false;
+    pwNote = "";
+    el.pwInput.value = "";
+    render();
+    focusPassword();
+  }
+
+  function closePassword() {
+    pwSeq += 1;
+    pwOpen = false;
+    pwBusy = false;
+    el.pwInput.value = "";
+    el.pwInput.blur();
+    render();
+  }
+
+  function submitPassword() {
+    if (!pwOpen || pwBusy) return;
+    var chosen = CONFIG.players[pickIndex];
+    var value = el.pwInput.value.trim();
+    if (!chosen || !value) {
+      focusPassword();
+      return;
+    }
+    var seq = ++pwSeq;
+    pwBusy = true;
+    pwNote = "";
+    render();
+    request("POST", { action: "login", playerId: chosen.id, password: value }).then(function (next) {
+      if (seq !== pwSeq) return;
+      password = value;
+      storageSet("monster.password", value);
+      playerId = chosen.id;
+      storageSet("monster.player", chosen.id);
+      pwOpen = false;
+      pwBusy = false;
+      picking = false;
+      el.pwInput.value = "";
+      el.pwInput.blur();
+      applyState(next);
+    }, function (err) {
+      if (seq !== pwSeq) return;
+      pwBusy = false;
+      pwNote = err && err.message === "auth" ? "pwWrong" : "pwFail";
+      pwNoteUntil = Date.now() + 4000;
+      el.pwInput.value = "";
+      focusPassword();
+      // No keyboard to type a second try with: fall back to the picker.
+      if (document.activeElement !== el.pwInput) pwOpen = false;
+      render();
+      setTimeout(renderStatus, 4100);
+    });
+  }
+
+  function renderPassword() {
+    el.pwBox.hidden = !pwOpen;
+    el.pwBox.classList.toggle("is-busy", pwBusy);
+    el.pwText.textContent = el.pwInput.value;
+    el.pwInput.setAttribute("aria-label", t("pwLabel"));
   }
 
   function stepDay(delta) {
@@ -1109,6 +1268,13 @@ function consider(checkins) {
   }
 
   function figureOrder() {
+    if (picking) {
+      // Carousel: the current pick sits in the middle.
+      var n = CONFIG.players.length;
+      return [-1, 0, 1].map(function (d) {
+        return CONFIG.players[(pickIndex + d + n) % n];
+      });
+    }
     var others = [];
     var me = null;
     CONFIG.players.forEach(function (p) {
@@ -1135,7 +1301,7 @@ function consider(checkins) {
       if (areas.leg) cls += " area-leg";
       if (areas.chest) cls += " area-chest";
       if (areas.back) cls += " area-back";
-      var you = p.id === playerId;
+      var you = !picking && p.id === playerId;
       var hot = picking && CONFIG.players[pickIndex] && p.id === CONFIG.players[pickIndex].id;
       var marked = picking ? hot : you;
       var opt = today[p.id];
@@ -1148,7 +1314,7 @@ function consider(checkins) {
         '<i class="zone legs leg-b"></i>'
       );
       return (
-        '<div class="figure' + (you ? " is-you" : "") + (hot ? " is-hot" : "") + (marked ? " is-marked" : "") + '">' +
+        '<div class="figure' + (you ? " is-you" : "") + (hot ? " is-hot" : "") + (marked ? " is-marked" : "") + '" data-player="' + p.id + '">' +
         '<div class="' + cls + '" role="img" aria-label="' + figureLabel(p, areas) + '">' +
         '<div class="layer full"></div>' +
         '<div class="layer cape"></div>' +
@@ -1256,8 +1422,12 @@ function consider(checkins) {
   }
 
   function renderStatus() {
-    if (!playerId) {
-      typeTo(t("who"));
+    if (pwOpen) {
+      typeTo(t(pwBusy ? "pwChecking" : pwNote || "pwAsk"));
+      return;
+    }
+    if (!playerId || picking) {
+      typeTo(t(pwNote && Date.now() < pwNoteUntil ? pwNote : "who"));
       return;
     }
     if (viewOffset !== 0) {
@@ -1275,17 +1445,25 @@ function consider(checkins) {
     el.signal.setAttribute("aria-label", t("sheet"));
   }
 
+  // While picking, the phone shows the highlighted person's shell and stickers.
+  function decorId() {
+    var hot = picking && CONFIG.players[pickIndex];
+    return hot ? hot.id : playerId;
+  }
+
   function myColor() {
+    var id = decorId();
     var rows = (state && state.phoneColors) || [];
     for (var i = 0; i < rows.length; i++) {
-      if (rows[i].playerId === playerId) return rows[i].color;
+      if (rows[i].playerId === id) return rows[i].color;
     }
     return "blue";
   }
 
   function myStickers() {
+    var id = decorId();
     return ((state && state.stickers) || []).filter(function (row) {
-      return row.playerId === playerId;
+      return row.playerId === id;
     });
   }
 
@@ -1383,14 +1561,14 @@ function consider(checkins) {
       var label = (COLOR_NAMES[id] && (COLOR_NAMES[id][lang] || COLOR_NAMES[id].en)) || id;
       return '<button type="button" class="swatch' + (id === current ? " is-on" : "") +
         '" data-color="' + id + '" style="background:' + hex + '" aria-label="' + label +
-        '" aria-pressed="' + (id === current ? "true" : "false") + '"></button>';
+        '" aria-pressed="' + (id === current ? "true" : "false") + '"' + (picking ? " disabled" : "") + "></button>";
     }).join("");
     var placed = {};
     myStickers().forEach(function (row) { placed[row.dayId] = true; });
     el.stickerCol.innerHTML = catalogIds().filter(function (id) {
       return !placed[id];
     }).map(function (id) {
-      return '<button type="button" class="sticker-btn" data-day="' + id + '">' + stickerWrap(id) + "</button>";
+      return '<button type="button" class="sticker-btn" data-day="' + id + '"' + (picking ? " disabled" : "") + ">" + stickerWrap(id) + "</button>";
     }).join("");
   }
 
@@ -1401,7 +1579,7 @@ function consider(checkins) {
   }
 
   function beginDrag(dayId, placed, src, event) {
-    if (!dayId || drag) return;
+    if (!dayId || drag || picking) return;
     drag = { dayId: dayId, placed: placed, src: src };
     if (src) src.style.opacity = "0.25";
     el.ghost.innerHTML = stickerWrap(dayId);
@@ -1489,7 +1667,7 @@ function consider(checkins) {
     el.langToggle.textContent = lang === "zh" ? "EN" : "中文";
     el.dayPrev.setAttribute("aria-label", t(picking ? "prevUser" : "prevDay"));
     el.dayNext.setAttribute("aria-label", t(picking ? "nextUser" : "nextDay"));
-    el.replay.setAttribute("aria-label", t(picking ? "chooseUser" : "replay"));
+    el.replay.setAttribute("aria-label", t(pwOpen ? "pwSubmit" : picking ? "chooseUser" : "replay"));
     el.recap.setAttribute("aria-label", t("recap"));
     updateRecapEnabled();
     el.recapClose.textContent = t("recapClose");
@@ -1509,6 +1687,7 @@ function consider(checkins) {
     renderPips();
     renderSignal();
     renderStatus();
+    renderPassword();
     syncBrowse();
     if (el.decorate) el.decorate.setAttribute("aria-label", t("decorate"));
     renderDecor();
@@ -1535,17 +1714,50 @@ function consider(checkins) {
     setLang(lang === "en" ? "zh" : "en");
   });
   el.replay.addEventListener("click", function () {
-    if (picking) confirmPick();
+    if (pwOpen) submitPassword();
+    else if (picking) confirmPick();
     else replayView();
   });
+  // Keep the keyboard up when the circle button submits the password.
+  el.replay.addEventListener("mousedown", function (event) {
+    if (pwOpen) event.preventDefault();
+  });
   el.dayPrev.addEventListener("click", function () {
-    if (picking) stepPick(-1);
+    if (pwOpen) closePassword();
+    else if (picking) stepPick(-1);
     else stepDay(-1);
   });
   el.dayNext.addEventListener("click", function () {
-    if (picking) stepPick(1);
+    if (pwOpen) closePassword();
+    else if (picking) stepPick(1);
     else stepDay(1);
   });
+  el.pwInput.addEventListener("input", function () {
+    pwNote = "";
+    renderPassword();
+    renderStatus();
+  });
+  el.pwInput.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitPassword();
+    } else if (event.key === "Escape") {
+      closePassword();
+    }
+  });
+  // Leaving the keyboard goes back to the picker. The short wait lets a tap
+  // on the circle button submit first.
+  el.pwInput.addEventListener("blur", function () {
+    if (!pwOpen || pwBusy) return;
+    setTimeout(function () {
+      if (pwOpen && !pwBusy && document.activeElement !== el.pwInput) closePassword();
+    }, 200);
+  });
+  document.addEventListener("pointerdown", function (event) {
+    if (!pwOpen || pwBusy) return;
+    if (event.target.closest && event.target.closest("#replay")) return;
+    el.pwInput.blur();
+  }, true);
   el.recap.addEventListener("click", function () { startRecap(); });
   el.signal.addEventListener("click", function () {
     if (synced && !sheetError && scriptUrl()) return;
@@ -1576,7 +1788,7 @@ function consider(checkins) {
   });
   el.colorCol.addEventListener("click", function (event) {
     var btn = event.target.closest("button[data-color]");
-    if (!btn || !playerId) return;
+    if (!btn || !playerId || picking) return;
     var color = btn.getAttribute("data-color");
     if (!PHONE_COLORS[color]) return;
     setLocalColor(color);
@@ -1608,12 +1820,8 @@ function consider(checkins) {
   document.addEventListener("pointercancel", endDrag);
   window.addEventListener("phone-ready", function () { renderDecor(); });
   el.switchName.addEventListener("click", function () {
-    picking = true;
-    pickIndex = 0;
-    CONFIG.players.forEach(function (p, i) {
-      if (p.id === playerId) pickIndex = i;
-    });
-    render();
+    if (pwOpen) closePassword();
+    openPicker();
   });
   el.choices.addEventListener("click", function (event) {
     var btn = event.target.closest("button[data-player]");
@@ -1634,8 +1842,16 @@ function consider(checkins) {
 
   lang = detectLang();
   var storedPlayer = storageGet("monster.player");
-  if (playerById(storedPlayer)) playerId = storedPlayer;
-  else picking = true;
+  var storedPassword = storageGet("monster.password");
+  if (playerById(storedPlayer) && storedPassword) {
+    playerId = storedPlayer;
+    password = storedPassword;
+  } else {
+    picking = true;
+    CONFIG.players.forEach(function (p, i) {
+      if (p.id === storedPlayer) pickIndex = i;
+    });
+  }
   if (!scriptUrl()) sheetError = true;
 
   showFallback();
