@@ -7,6 +7,8 @@
  * Copy the /exec URL into config.js scriptUrl.
  *
  * Keep TIME_ZONE and RESET_HOUR in step with config.js.
+ * Sunday recap reads weekDefeated: monsters all three finished,
+ * Monday through Sunday in Pacific time. Redeploy after pasting.
  * The reset minute is 00. The window ends at the next 8:00am Pacific,
  * so daylight-saving nights are 23 or 25 hours and the Beijing label shifts.
  */
@@ -31,6 +33,7 @@ function doPost(e) {
 }
 
 function handle_(body) {
+  if (!body) return json_(readState_());
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
@@ -38,26 +41,37 @@ function handle_(body) {
     return json_({ error: "busy" });
   }
   try {
+    var playerId = String(body.playerId || "");
+    var option = String(body.option || "");
+    if (!PLAYERS[playerId] || !OPTIONS[option]) return json_({ error: "refused" });
     var now = new Date();
     var window = dayWindow_(now);
-    if (body) {
-      var playerId = String(body.playerId || "");
-      var option = String(body.option || "");
-      if (!PLAYERS[playerId] || !OPTIONS[option]) return json_({ error: "refused" });
-      upsert_(window.dayId, playerId, option, formatIso_(now), PLAYERS[playerId]);
-      now = new Date();
-      window = dayWindow_(now);
-    }
-    return json_({
-      dayId: window.dayId,
-      startsAt: window.startsAt,
-      endsAt: window.endsAt,
-      serverNow: formatIso_(now),
-      checkins: readCheckins_(window.dayId),
-    });
+    upsert_(window.dayId, playerId, option, formatIso_(now), PLAYERS[playerId]);
+    return json_(readState_());
   } finally {
     lock.releaseLock();
   }
+}
+
+function readState_() {
+  var now = new Date();
+  var window = dayWindow_(now);
+  var groups = readGrouped_();
+  var week = weekDayIds_(now);
+  var need = Object.keys(PLAYERS).length;
+  var defeated = [];
+  for (var i = 0; i < week.length; i++) {
+    var rows = groups[week[i]] || [];
+    if (rows.length >= need) defeated.push(week[i]);
+  }
+  return {
+    dayId: window.dayId,
+    startsAt: window.startsAt,
+    endsAt: window.endsAt,
+    serverNow: formatIso_(now),
+    checkins: groups[window.dayId] || [],
+    weekDefeated: defeated,
+  };
 }
 
 function sheet_() {
@@ -89,27 +103,53 @@ function upsert_(dayId, playerId, option, loggedAt, playerName) {
   range.setValues([[dayId, playerId, option, loggedAt, playerName]]);
 }
 
-function readCheckins_(dayId) {
+function readGrouped_() {
   var sh = sheet_();
   var values = sh.getDataRange().getValues();
-  var list = [];
+  var groups = {};
   for (var i = 1; i < values.length; i++) {
-    if (asText_(values[i][0]) !== dayId) continue;
+    var dayId = asText_(values[i][0]);
     var playerId = asText_(values[i][1]);
     var option = asText_(values[i][2]);
-    if (!PLAYERS[playerId] || !OPTIONS[option]) continue;
+    if (!dayId || !PLAYERS[playerId] || !OPTIONS[option]) continue;
+    if (!groups[dayId]) groups[dayId] = [];
+    var list = groups[dayId];
+    var dup = false;
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].playerId === playerId) {
+        dup = true;
+        break;
+      }
+    }
+    if (dup) continue;
     list.push({
       playerId: playerId,
       option: option,
       loggedAt: asIso_(values[i][3]),
     });
   }
-  list.sort(function (a, b) {
-    if (a.loggedAt < b.loggedAt) return -1;
-    if (a.loggedAt > b.loggedAt) return 1;
-    return 0;
+  Object.keys(groups).forEach(function (dayId) {
+    groups[dayId].sort(function (a, b) {
+      if (a.loggedAt < b.loggedAt) return -1;
+      if (a.loggedAt > b.loggedAt) return 1;
+      return 0;
+    });
   });
-  return list;
+  return groups;
+}
+
+function weekDayIds_(now) {
+  var p = zonedParts_(now, TIME_ZONE);
+  var weekday = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+  var back = (weekday + 6) % 7;
+  var monday = shiftDate_(p.year, p.month, p.day, -back);
+  var ids = [];
+  for (var i = 0; i < 7; i++) {
+    var day = shiftDate_(monday.y, monday.m, monday.d, i);
+    var start = wallToUtc_(day.y, day.m, day.d, RESET_HOUR, 0, 0, TIME_ZONE);
+    ids.push(formatIso_(start));
+  }
+  return ids;
 }
 
 function asIso_(value) {

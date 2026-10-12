@@ -50,17 +50,27 @@ button {
 
 .top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   min-height: 44px;
 }
 
+.top-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 h1 {
   margin: 0;
+  padding-top: 8px;
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .langs {
@@ -84,6 +94,25 @@ h1 {
 
 .langs button[aria-pressed="true"] {
   background: var(--accent);
+}
+
+.recap-btn {
+  min-height: 44px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 6px 12px;
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.recap-btn:disabled {
+  background: #e6dbd3;
+  color: #9c8e87;
+  border-color: #cfc1b8;
+  box-shadow: none;
+  cursor: default;
 }
 
 .screen { display: flex; flex-direction: column; }
@@ -131,7 +160,7 @@ h1 {
   display: block;
 }
 
-.monster-name, #who {
+#who {
   margin: 0;
   text-align: center;
   font-size: 28px;
@@ -140,7 +169,15 @@ h1 {
   line-height: 1.05;
 }
 
-#who { font-size: 28px; }
+.monster-name {
+  margin: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
 
 .pips {
   display: flex;
@@ -237,19 +274,14 @@ h1 {
 
 .move.chosen { color: #c85a32; }
 
-.status, .hint {
-  margin: 0;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
 .hint {
+  margin: 0;
   min-height: 0;
+  text-align: center;
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .options, .choices {
@@ -274,7 +306,8 @@ h1 {
 
 .choice { min-height: 72px; font-size: 22px; }
 
-.option:active, .choice:active, .langs button:active, .linkish:active {
+.option:active, .choice:active, .langs button:active, .linkish:active,
+.recap-btn:active:not(:disabled), .recap-close:active {
   transform: translate(2px, 2px);
   box-shadow: 2px 2px 0 var(--ink);
 }
@@ -314,21 +347,92 @@ h1 {
   50% { transform: translateY(-6px); }
 }
 
+.recap-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(61, 44, 41, 0.35);
+}
+
+.recap-layer[hidden] { display: none !important; }
+
+.recap-viewport {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: min(100%, 480px);
+  transform: translateX(-50%);
+  overflow: hidden;
+  background:
+    radial-gradient(90% 42% at 50% -10%, #ffe3c4 0%, rgba(255, 246, 232, 0) 68%),
+    var(--paper);
+}
+
+.recap-close {
+  position: absolute;
+  z-index: 5;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 3px solid var(--ink);
+  background: var(--card);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.recap-stage {
+  position: absolute;
+  top: 46%;
+  left: 0;
+  width: min(78%, 280px);
+  height: min(48%, 360px);
+  pointer-events: none;
+}
+
+.recap-stage .monster-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.recap-caption {
+  position: absolute;
+  z-index: 5;
+  left: 20px;
+  right: 20px;
+  top: 72%;
+  margin: 0;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+
+.recap-caption.is-empty {
+  top: 46%;
+  bottom: auto;
+  transform: translateY(-50%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stage-wrap { animation: none; }
-  .option:active, .choice:active { transform: none; }
+  .option:active, .choice:active, .recap-btn:active, .recap-close:active { transform: none; }
 }
 
 @media (min-height: 820px) {
   .option { min-height: 60px; font-size: 18px; }
-  .monster-name { font-size: 32px; }
+  .monster-name { font-size: 20px; }
   .remain { font-size: 22px; }
 }
 
 @media (max-height: 700px) {
   .person { min-height: 40px; }
   .option { min-height: 48px; }
-  .monster-name { font-size: 24px; }
+  .monster-name { font-size: 16px; }
   .remain { font-size: 18px; }
   .local-end, .both-end { font-size: 13px; }
 }

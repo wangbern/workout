@@ -123,6 +123,28 @@
     return zoneLabel ? text + " " + zoneLabel : text;
   }
 
+  function weekdayLabel(date, timeZone, lang) {
+    var p = zonedParts(date, timeZone);
+    if (lang === "zh") return WEEK_ZH[p.weekday] || p.weekday;
+    return p.weekday;
+  }
+
+  // Monday through Sunday by the clock in timeZone. Each id is that
+  // morning's reset, which is the monster for that weekday.
+  function weekDayIds(now, timeZone, resetHour) {
+    var p = zonedParts(now, timeZone);
+    var weekday = new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+    var back = (weekday + 6) % 7;
+    var monday = shiftDate(p.year, p.month, p.day, -back);
+    var ids = [];
+    for (var i = 0; i < 7; i++) {
+      var day = shiftDate(monday.y, monday.m, monday.d, i);
+      var start = wallToUtc(day.y, day.m, day.d, resetHour, 0, 0, timeZone);
+      ids.push(formatIso(start));
+    }
+    return ids;
+  }
+
   function deadlineCopy(endsAt, lang, viewerZone, config) {
     var local = formatWhen(endsAt, viewerZone, lang, null);
     var a = formatWhen(endsAt, config.timezoneA, lang, config.zoneALabel[lang]);
@@ -137,6 +159,8 @@
     formatIso: formatIso,
     zonedParts: zonedParts,
     dayWindow: dayWindow,
+    weekDayIds: weekDayIds,
+    weekdayLabel: weekdayLabel,
     deadlineCopy: deadlineCopy,
     formatWhen: formatWhen,
   };

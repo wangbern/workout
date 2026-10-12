@@ -533,26 +533,41 @@
         setPose(svg, { scaleY: after, x: 0, y: 0, rot: 0 });
         return;
       }
-      return tween(reduce ? 120 : 380, function (raw) {
-        if (!alive()) return;
-        var p = smooth(raw);
-        if (rig) rig.setAttribute("opacity", String(1 - p));
-        if (puddle) {
-          puddle.removeAttribute("display");
-          puddle.setAttribute("opacity", String(p));
-          var s = 0.45 + 0.55 * p;
-          puddle.setAttribute("transform", "translate(0 64) scale(1 " + s + ") translate(0 -64)");
-        }
-        setPose(svg, { scaleY: after * (1 - p * 0.4), x: 0, y: 10 * p, rot: 0 });
-      }, alive).then(function () {
-        if (!alive()) return;
-        if (rig) rig.setAttribute("display", "none");
-        if (puddle) {
-          puddle.removeAttribute("display");
-          puddle.setAttribute("opacity", "1");
-          puddle.removeAttribute("transform");
-        }
-      });
+      return melt(svg, { alive: alive, scaleY: after });
+    });
+  }
+
+  function melt(svg, opts) {
+    opts = opts || {};
+    var alive = opts.alive || function () { return true; };
+    var reduce = false;
+    try {
+      reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {}
+    var rig = svg.querySelector(".rig");
+    var puddle = svg.querySelector(".puddle");
+    var after = opts.scaleY == null ? 1 : opts.scaleY;
+    return tween(reduce ? 120 : 380, function (raw) {
+      if (!alive()) return;
+      var p = smooth(raw);
+      if (rig) rig.setAttribute("opacity", String(1 - p));
+      if (puddle) {
+        puddle.removeAttribute("display");
+        puddle.setAttribute("opacity", String(p));
+        var s = 0.45 + 0.55 * p;
+        puddle.setAttribute("transform", "translate(0 64) scale(1 " + s + ") translate(0 -64)");
+      }
+      setPose(svg, { scaleY: after * (1 - p * 0.4), x: 0, y: 10 * p, rot: 0 });
+    }, alive).then(function () {
+      if (!alive()) return;
+      if (rig) rig.setAttribute("display", "none");
+      if (puddle) {
+        puddle.removeAttribute("display");
+        puddle.setAttribute("opacity", "1");
+        puddle.removeAttribute("transform");
+      }
+      var shadow = svg.querySelector(".shadow");
+      if (shadow) shadow.setAttribute("opacity", "0");
     });
   }
 
@@ -560,6 +575,7 @@
     traitsFor: traitsFor,
     svgString: svgString,
     play: play,
+    melt: melt,
     settle: settle,
     namesEn: NAMES_EN,
     namesZh: NAMES_ZH,

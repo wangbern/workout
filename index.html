@@ -16,9 +16,12 @@
   <div class="app">
     <header class="top">
       <h1 id="title">Monster Day</h1>
-      <div class="langs" role="group" id="lang-group">
-        <button type="button" id="lang-en" aria-pressed="true">EN</button>
-        <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+      <div class="top-tools">
+        <div class="langs" role="group" id="lang-group">
+          <button type="button" id="lang-en" aria-pressed="true">EN</button>
+          <button type="button" id="lang-zh" aria-pressed="false">中文</button>
+        </div>
+        <button type="button" id="recap" class="recap-btn" disabled>Recap</button>
       </div>
     </header>
 
@@ -32,7 +35,7 @@
       <div class="stage-wrap">
         <div id="home-stage" class="stage"></div>
       </div>
-      <h2 id="monster-name" class="monster-name"></h2>
+      <p id="monster-name" class="monster-name" aria-live="polite"></p>
       <div id="pips" class="pips"></div>
       <div class="clock">
         <p id="remain" class="remain"></p>
@@ -40,11 +43,17 @@
         <p id="both-end" class="both-end"></p>
       </div>
       <ul id="people" class="people"></ul>
-      <p id="status" class="status" aria-live="polite"></p>
       <p id="hint" class="hint" hidden></p>
       <div id="options" class="options"></div>
       <button type="button" id="switch-name" class="linkish"></button>
     </section>
+  </div>
+  <div id="recap-layer" class="recap-layer" hidden role="dialog" aria-modal="true" aria-labelledby="recap-caption">
+    <div id="recap-viewport" class="recap-viewport">
+      <button type="button" id="recap-close" class="recap-close">Close</button>
+      <div id="recap-stage" class="recap-stage"></div>
+      <p id="recap-caption" class="recap-caption" aria-live="polite"></p>
+    </div>
   </div>
   <script src="config.js"></script>
   <script src="day.js"></script>

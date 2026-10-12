@@ -1,26 +1,29 @@
 (function () {
   var CONFIG = window.MONSTER_CONFIG;
   var COPY = {
-    title: { en: "Monster Day", zh: "怪兽日" },
-    who: { en: "Who are you?", zh: "你是哪一位？" },
-    switchName: { en: "Switch name", zh: "换一个人" },
-    waiting: { en: "Waiting", zh: "等待" },
+    title: { en: "Auntie's Workout Tracker", zh: "阿姨的健身记录" },
+    who: { en: "Who Are You?", zh: "你是哪一位？" },
+    switchName: { en: "Switch Name", zh: "换一个人" },
+    waiting: { en: "waiting...", zh: "等待" },
     you: { en: "You", zh: "你" },
-    leg: { en: "Leg", zh: "练腿" },
+    leg: { en: "Legs", zh: "练腿" },
     chest: { en: "Chest/Cardio", zh: "胸/有氧" },
     back: { en: "Back", zh: "练背" },
     rest: { en: "Rest/Walk", zh: "休息/走路" },
-    nobody: { en: "A new monster is here.", zh: "新的小怪兽来了。" },
-    partial: { en: "The others can still land a hit.", zh: "其他人还可以补上一击。" },
-    defeated: { en: "All three hits landed.", zh: "三下都打中了。" },
-    slip: { en: "It slipped away. A new one is here.", zh: "它溜走了。新的一只来了。" },
-    saved: { en: "Today’s move is in.", zh: "今天的动作记下了。" },
-    quiet: { en: "The sheet is quiet. Trying again.", zh: "表格暂时没回应，正在再试。" },
+    nobody: { en: "A new monster is here!", zh: "一只新怪物来了！" },
+    partial: { en: "Nice hit! The others need to join.", zh: "“打得好！其他人也得跟上。”" },
+    defeated: { en: "You have defeated today's monster together.", zh: "你们齐心协力击败了今天的怪物。" },
+    slip: { en: "Yesterday's slipped away. A new one is here!", zh: "昨天已悄然逝去，新的一天已经到来！" },
+    saved: { en: "Congrats, today's workout is saved.", zh: "恭喜，今天的训练已保存。" },
+    quiet: { en: "No data received... Trying again.", zh: "未接收到数据……正在重试。" },
     hint: {
       en: "Add the Apps Script web app URL in config.js.",
       zh: "请把 Apps Script 网页应用链接填进 config.js。",
     },
     langGroup: { en: "Language", zh: "语言" },
+    recap: { en: "Recap", zh: "回顾" },
+    recapClose: { en: "Close", zh: "关闭" },
+    recapEmpty: { en: "No monsters defeated this week.", zh: "这周没有击败怪物。" },
   };
 
   var OPTION_IDS = ["leg", "chest", "back", "rest"];
@@ -47,10 +50,11 @@
   var localAnimated = null;
   var optimistic = null;
   var monsterDay = "";
-  var traits = null;
   var statusTimer = 0;
   var boundaryTimer = 0;
   var polledEnd = "";
+  var recapGen = 0;
+  var recapDayId = "";
 
   var el = {
     title: document.getElementById("title"),
@@ -67,10 +71,15 @@
     localEnd: document.getElementById("local-end"),
     bothEnd: document.getElementById("both-end"),
     people: document.getElementById("people"),
-    status: document.getElementById("status"),
     hint: document.getElementById("hint"),
     options: document.getElementById("options"),
     switchName: document.getElementById("switch-name"),
+    recap: document.getElementById("recap"),
+    recapLayer: document.getElementById("recap-layer"),
+    recapViewport: document.getElementById("recap-viewport"),
+    recapClose: document.getElementById("recap-close"),
+    recapStage: document.getElementById("recap-stage"),
+    recapCaption: document.getElementById("recap-caption"),
   };
 
   function storageGet(key) {
@@ -193,7 +202,13 @@
       throw new Error("quiet");
     }
     var checkins = [];
+    var weekDefeated = [];
     var seen = {};
+    if (Array.isArray(raw.weekDefeated)) {
+      raw.weekDefeated.forEach(function (id) {
+        if (typeof id === "string" && id) weekDefeated.push(id);
+      });
+    }
     (raw.checkins || []).forEach(function (c) {
       if (!c || !playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
       if (seen[c.playerId]) return;
@@ -210,6 +225,7 @@
       endsAt: String(raw.endsAt),
       serverNow: String(raw.serverNow),
       checkins: checkins,
+      weekDefeated: weekDefeated,
     };
   }
 
@@ -226,7 +242,7 @@
     var url = scriptUrl();
     if (!url) return Promise.reject(new Error("quiet"));
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+    var timer = setTimeout(function () { ctrl.abort(); }, 45000);
     var opts = {
       method: method,
       cache: "no-store",
@@ -257,6 +273,7 @@
       endsAt: w.endsAt,
       serverNow: window.MonsterDay.formatIso(new Date()),
       checkins: state && state.dayId === w.dayId ? state.checkins : [],
+      weekDefeated: (state && state.weekDefeated) || [],
       provisional: true,
     };
     if (!state || state.dayId !== next.dayId) {
@@ -272,7 +289,6 @@
   }
 
   function drawMonster(dayId) {
-    traits = window.MonsterArt.traitsFor(dayId);
     monsterDay = dayId;
     document.getElementById("home-stage").innerHTML = window.MonsterArt.svgString(dayId, "home");
     document.getElementById("pick-stage").innerHTML = window.MonsterArt.svgString(dayId, "pick");
@@ -511,7 +527,180 @@ function consider(checkins) {
     return s + "s";
   }
 
+  function pacificNow() {
+    return new Date(Date.now() + offsetMs);
+  }
+
+  function recapOpen() {
+    return window.MonsterDay.zonedParts(pacificNow(), CONFIG.timezoneA).weekday === "Sun";
+  }
+
+  function updateRecapEnabled() {
+    var open = recapOpen();
+    if (el.recap.disabled === !open) return;
+    el.recap.disabled = !open;
+  }
+
+  function defeatedIds() {
+    var allow = {};
+    window.MonsterDay.weekDayIds(pacificNow(), CONFIG.timezoneA, CONFIG.resetHour).forEach(function (id) {
+      allow[id] = true;
+    });
+    var seen = {};
+    var ids = [];
+    function add(id) {
+      if (!allow[id] || seen[id]) return;
+      seen[id] = true;
+      ids.push(id);
+    }
+    ((state && state.weekDefeated) || []).forEach(add);
+    if (state && shownCheckins().length >= CONFIG.players.length) add(state.dayId);
+    ids.sort();
+    return ids;
+  }
+
+  function recapCaptionText(dayId) {
+    var traits = window.MonsterArt.traitsFor(dayId);
+    var name = lang === "zh" ? traits.nameZh : traits.nameEn;
+    var day = window.MonsterDay.weekdayLabel(new Date(dayId), CONFIG.timezoneA, lang);
+    return day + " · " + name;
+  }
+
+  function prefersReduced() {
+    try {
+      return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function recapPlace(x) {
+    el.recapStage.style.transform = "translate3d(" + x.toFixed(1) + "px, -50%, 0)";
+  }
+
+  function recapBounds() {
+    var view = el.recapViewport.clientWidth || window.innerWidth;
+    var width = el.recapStage.getBoundingClientRect().width;
+    if (!width) width = Math.min(view * 0.78, 280);
+    return {
+      enter: view + 24,
+      center: (view - width) / 2,
+      exit: -width - 24,
+    };
+  }
+
+  function recapMove(from, to, ms, gen) {
+    return new Promise(function (resolve) {
+      if (gen !== recapGen) {
+        resolve(false);
+        return;
+      }
+      if (ms <= 24) {
+        recapPlace(to);
+        resolve(true);
+        return;
+      }
+      var start = performance.now();
+      function frame(now) {
+        if (gen !== recapGen) {
+          resolve(false);
+          return;
+        }
+        var raw = Math.min(1, (now - start) / ms);
+        var p = raw * raw * (3 - 2 * raw);
+        recapPlace(from + (to - from) * p);
+        if (raw < 1) requestAnimationFrame(frame);
+        else resolve(true);
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function recapWait(ms, gen) {
+    return new Promise(function (resolve) {
+      if (gen !== recapGen) {
+        resolve(false);
+        return;
+      }
+      setTimeout(function () { resolve(gen === recapGen); }, ms);
+    });
+  }
+
+  function showRecapMonster(dayId, index, gen) {
+    var reduce = prefersReduced();
+    el.recapStage.innerHTML = window.MonsterArt.svgString(dayId, "recap" + index + "-" + gen);
+    var svg = el.recapStage.querySelector(".monster-svg");
+    window.MonsterArt.settle(svg, { defeated: false, restCount: 0 });
+    recapDayId = dayId;
+    el.recapCaption.textContent = recapCaptionText(dayId);
+    el.recapCaption.classList.remove("is-empty");
+    var bounds = recapBounds();
+    recapPlace(bounds.enter);
+    return recapMove(bounds.enter, bounds.center, reduce ? 20 : 720, gen).then(function (ok) {
+      if (!ok) return false;
+      return recapWait(reduce ? 160 : 780, gen);
+    }).then(function (ok) {
+      if (!ok) return false;
+      return window.MonsterArt.melt(svg, {
+        scaleY: 1,
+        alive: function () { return gen === recapGen && svg.isConnected; },
+      }).then(function () { return gen === recapGen; });
+    }).then(function (ok) {
+      if (!ok) return false;
+      return recapWait(reduce ? 160 : 720, gen);
+    }).then(function (ok) {
+      if (!ok) return false;
+      var latest = recapBounds();
+      return recapMove(latest.center, latest.exit, reduce ? 20 : 680, gen);
+    });
+  }
+
+  function stopRecap() {
+    recapGen += 1;
+    recapDayId = "";
+    el.recapLayer.hidden = true;
+    el.recapStage.innerHTML = "";
+    el.recapStage.style.transform = "";
+    el.recapCaption.textContent = "";
+    el.recapCaption.classList.remove("is-empty");
+  }
+
+  function startRecap() {
+    if (!recapOpen() || !el.recapLayer.hidden) return;
+    var ids = defeatedIds();
+    recapGen += 1;
+    var gen = recapGen;
+    recapDayId = "";
+    el.recapLayer.hidden = false;
+    el.recapClose.textContent = t("recapClose");
+    if (!ids.length) {
+      el.recapStage.innerHTML = "";
+      el.recapStage.style.transform = "";
+      el.recapCaption.textContent = t("recapEmpty");
+      el.recapCaption.classList.add("is-empty");
+      el.recapClose.focus();
+      return;
+    }
+    el.recapCaption.classList.remove("is-empty");
+    el.recapClose.focus();
+    var chain = Promise.resolve(true);
+    ids.forEach(function (dayId, index) {
+      chain = chain.then(function (ok) {
+        if (!ok || gen !== recapGen) return false;
+        return showRecapMonster(dayId, index, gen);
+      });
+    });
+    chain.then(function () {
+      if (gen !== recapGen) return;
+      stopRecap();
+    }).catch(function () {
+      if (gen !== recapGen) return;
+      stopRecap();
+    });
+  }
+
   function tick() {
+    updateRecapEnabled();
     if (!state || !state.endsAt) return;
     var left = Date.parse(state.endsAt) - (Date.now() + offsetMs);
     el.remain.textContent = formatRemain(left);
@@ -614,7 +803,7 @@ function consider(checkins) {
   }
 
   function renderStatus() {
-    el.status.textContent = t(statusKey());
+    el.name.textContent = t(statusKey());
   }
 
   function render() {
@@ -624,9 +813,15 @@ function consider(checkins) {
     el.langGroup.setAttribute("aria-label", t("langGroup"));
     el.langEn.setAttribute("aria-pressed", lang === "en" ? "true" : "false");
     el.langZh.setAttribute("aria-pressed", lang === "zh" ? "true" : "false");
+    el.recap.textContent = t("recap");
+    updateRecapEnabled();
+    el.recapClose.textContent = t("recapClose");
+    if (!el.recapLayer.hidden) {
+      el.recapCaption.textContent = recapDayId ? recapCaptionText(recapDayId) : t("recapEmpty");
+      el.recapCaption.classList.toggle("is-empty", !recapDayId);
+    }
     el.who.textContent = t("who");
     el.switchName.textContent = t("switchName");
-    if (traits) el.name.textContent = lang === "zh" ? traits.nameZh : traits.nameEn;
     var showHint = !scriptUrl();
     el.hint.hidden = !showHint;
     if (showHint) el.hint.textContent = t("hint");
@@ -656,6 +851,11 @@ function consider(checkins) {
 
   el.langEn.addEventListener("click", function () { setLang("en"); });
   el.langZh.addEventListener("click", function () { setLang("zh"); });
+  el.recap.addEventListener("click", function () { startRecap(); });
+  el.recapLayer.addEventListener("click", function () { stopRecap(); });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && !el.recapLayer.hidden) stopRecap();
+  });
   el.switchName.addEventListener("click", function () {
     playerId = "";
     render();
