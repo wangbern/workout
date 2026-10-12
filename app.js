@@ -2,13 +2,14 @@
   var CONFIG = window.MONSTER_CONFIG;
   var COPY = {
     title: { en: "Liping's Workout Tracker", zh: "立平的健身记录" },
+    titleFor: { en: "{name}'s Workout Tracker", zh: "{name}的健身记录" },
     who: { en: "Who Are You?", zh: "你是哪一位？" },
     switchName: { en: "Switch User", zh: "换用户" },
     waiting: { en: "waiting...", zh: "等待" },
-    leg: { en: "Legs", zh: "练腿" },
-    chest: { en: "Chest/Cardio", zh: "胸/有氧" },
-    back: { en: "Back", zh: "练背" },
-    rest: { en: "Rest/Walk", zh: "休息/走路" },
+    leg: { en: "LEGS", zh: "练腿" },
+    chest: { en: "CHEST/CARDIO", zh: "胸/有氧" },
+    back: { en: "BACK", zh: "练背" },
+    rest: { en: "REST/WALK", zh: "休息/走路" },
     nobody: { en: "A new monster is here!", zh: "一只新怪物来了！" },
     partial: { en: "Nice hit! The others need to join.", zh: "“打得好！其他人也得跟上。”" },
     defeated: { en: "You have defeated today's monster together.", zh: "你们齐心协力击败了今天的怪物。" },
@@ -37,6 +38,9 @@
     recapEmpty: { en: "No monsters defeated this week.", zh: "这周没有击败怪物。" },
     sheet: { en: "Sheet connection", zh: "表格连接" },
     decorate: { en: "Decorate", zh: "装饰" },
+    today: { en: "Today", zh: "今天" },
+    yesterday: { en: "Yesterday", zh: "昨天" },
+    tomorrow: { en: "Tomorrow", zh: "明天" },
   };
 
   var PHONE_COLORS = {
@@ -69,8 +73,13 @@
   var saveSeq = 0;
   var writes = 0;
   var decorWrites = 0;
+  var decorQueue = [];
+  var decorBusy = false;
+  var decorSeq = 0;
   var decorateOpen = false;
   var drag = null;
+  // The title sticker is saved with the others, under this id instead of a day.
+  var TITLE_ID = "title";
   var writeChain = Promise.resolve();
   var polling = false;
   var animGen = 0;
@@ -81,6 +90,7 @@
   var visualOptions = new Map();
   var browsePlayers = new Set();
   var browseOptions = new Map();
+  var browseSig = "";
   var localAnimated = null;
   var optimistic = null;
   var monsterDay = "";
@@ -89,6 +99,7 @@
   var polledEnd = "";
   var recapGen = 0;
   var recapDayId = "";
+  var recapDebug = false;
   var quietUntil = 0;
   var typeTarget = "";
   var typeTimer = 0;
@@ -105,10 +116,7 @@
   var pwNoteUntil = 0;
 
   var el = {
-    title: document.getElementById("title"),
-    title2: document.getElementById("title-2"),
-    titleEdge: document.getElementById("title-edge"),
-    titleEdge2: document.getElementById("title-edge-2"),
+    titleSticker: document.getElementById("title-sticker"),
     langGroup: document.getElementById("lang-group"),
     langToggle: document.getElementById("lang-toggle"),
     who: document.getElementById("who"),
@@ -118,6 +126,7 @@
     homeStage: document.getElementById("home-stage"),
     pickStage: document.getElementById("pick-stage"),
     signal: document.getElementById("signal"),
+    dayLabel: document.getElementById("day-label"),
     battFill: document.getElementById("batt-fill"),
     pips: document.getElementById("pips"),
     battery: document.getElementById("battery"),
@@ -138,9 +147,8 @@
     lcd: document.querySelector(".lcd"),
     recap: document.getElementById("recap"),
     recapLayer: document.getElementById("recap-layer"),
-    recapViewport: document.getElementById("recap-viewport"),
-    recapClose: document.getElementById("recap-close"),
     recapStage: document.getElementById("recap-stage"),
+    recapTrio: document.getElementById("recap-trio"),
     recapCaption: document.getElementById("recap-caption"),
     decorate: document.getElementById("decorate"),
     colorCol: document.getElementById("color-col"),
@@ -320,7 +328,9 @@
       var seenSticker = {};
       raw.stickers.forEach(function (row) {
         if (!row || !playerById(row.playerId) || typeof row.dayId !== "string" || !row.dayId) return;
-        if (row.kind !== "face" && row.kind !== "mesh") return;
+        // "tray" is the title sticker put back in the sticker column.
+        var inTray = row.kind === "tray" && row.dayId === TITLE_ID;
+        if (row.kind !== "face" && row.kind !== "mesh" && !inTray) return;
         var key = row.playerId + "|" + row.dayId;
         if (seenSticker[key]) return;
         var place = {
@@ -342,6 +352,24 @@
     } else if (state && state.stickers) {
       stickers = state.stickers.slice();
     }
+    var history = null;
+    if (Array.isArray(raw.history)) {
+      var seenPast = {};
+      history = [];
+      raw.history.forEach(function (c) {
+        if (!c || typeof c.dayId !== "string" || !c.dayId) return;
+        if (!playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
+        var key = c.dayId + "|" + c.playerId;
+        if (seenPast[key]) return;
+        seenPast[key] = true;
+        history.push({
+          dayId: c.dayId,
+          playerId: c.playerId,
+          option: c.option,
+          loggedAt: String(c.loggedAt || ""),
+        });
+      });
+    }
     (raw.checkins || []).forEach(function (c) {
       if (!c || !playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
       if (seen[c.playerId]) return;
@@ -360,6 +388,7 @@
       checkins: checkins,
       weekDefeated: weekDefeated,
       weekCheckins: weekCheckins,
+      history: history,
       defeatedAll: defeatedAll,
       phoneColors: phoneColors,
       stickers: stickers,
@@ -423,6 +452,7 @@
       checkins: state && state.dayId === w.dayId ? state.checkins : [],
       weekDefeated: (state && state.weekDefeated) || [],
       weekCheckins: state && Array.isArray(state.weekCheckins) ? state.weekCheckins : null,
+      history: state && Array.isArray(state.history) ? state.history : null,
       defeatedAll: (state && state.defeatedAll) || [],
       phoneColors: (state && state.phoneColors) || [],
       stickers: (state && state.stickers) || [],
@@ -557,6 +587,7 @@ function consider(checkins) {
     var wrap = document.querySelector(".stage-wrap");
     if (wrap) wrap.classList.add("acting");
     return window.MonsterArt.play(svg, ATTACK[c.option], {
+      color: colorOf(c.playerId),
       finishing: finishing,
       restBefore: restBefore,
       restAfter: restAfter,
@@ -580,7 +611,16 @@ function consider(checkins) {
     });
   }
 
+  // The sheet's answer was read before any save still waiting to go out, so
+  // until those land the color and stickers on this phone are the newer ones.
+  function keepDecor(next) {
+    if (!state) return;
+    next.stickers = state.stickers || [];
+    next.phoneColors = state.phoneColors || [];
+  }
+
   function applyState(next) {
+    if (decorWrites > 0) keepDecor(next);
     var wasSynced = synced;
     if (!wasSynced) {
       var snap = readSnap();
@@ -628,7 +668,10 @@ function consider(checkins) {
       return;
     }
     polling = true;
+    var seq = decorSeq;
     request("GET").then(function (next) {
+      // A sticker moved while this was on its way: the answer is already old.
+      if (seq !== decorSeq) keepDecor(next);
       applyState(next);
     }).catch(function () {
       sheetError = true;
@@ -641,6 +684,8 @@ function consider(checkins) {
 
   function onOption(option) {
     if (!synced || !playerId || !scriptUrl()) return;
+    // Past days are read-only: the buttons press but save nothing.
+    if (viewOffset < 0) return;
     if (optimistic && optimistic.option === option) return;
     if (!optimistic && myServerOption() === option) return;
     var seq = ++saveSeq;
@@ -657,8 +702,10 @@ function consider(checkins) {
         writes -= 1;
         return;
       }
+      var decorAt = decorSeq;
       return request("POST", { playerId: playerId, option: option }).then(function (next) {
         if (seq !== saveSeq) return;
+        if (decorAt !== decorSeq) keepDecor(next);
         savedUntil = Date.now() + 3500;
         applyState(next);
         if (localAnimated && localAnimated.seq === seq) localAnimated = null;
@@ -723,12 +770,20 @@ function consider(checkins) {
       seen[c.playerId] = true;
       out.push({ playerId: c.playerId, option: c.option, loggedAt: c.loggedAt || "" });
     }
+    if (state && Array.isArray(state.history)) state.history.forEach(add);
     if (state && Array.isArray(state.weekCheckins)) state.weekCheckins.forEach(add);
     else {
       var cached = readFigureCache();
       if (cached && Array.isArray(cached.checkins)) cached.checkins.forEach(add);
     }
     return out;
+  }
+
+  // A past day counts as beaten when all three rows are known, or when the
+  // sheet lists it as defeated and its rows have not arrived.
+  function dayBeaten(dayId, checks) {
+    if (distinctCheckins(checks) >= CONFIG.players.length) return true;
+    return ((state && state.defeatedAll) || []).indexOf(dayId) >= 0;
   }
 
   function optionAreas(option) {
@@ -740,16 +795,17 @@ function consider(checkins) {
     };
   }
 
-  function paintSettled(dayId, checks) {
+  function paintSettled(dayId, checks, beaten) {
     drawMonster(dayId);
     var rest = 0;
     checks.forEach(function (c) {
       if (c.option === "rest") rest += 1;
     });
+    var hits = beaten ? 3 : distinctCheckins(checks);
     document.querySelectorAll(".monster-svg").forEach(function (svg) {
-      window.MonsterArt.settle(svg, { defeated: checks.length >= 3, restCount: rest });
+      window.MonsterArt.settle(svg, { defeated: hits >= 3, restCount: rest });
     });
-    setHp(distinctCheckins(checks));
+    setHp(hits);
   }
 
   function syncBrowse() {
@@ -758,7 +814,7 @@ function consider(checkins) {
     el.lcd.classList.toggle("is-password", pwOpen);
     el.lcd.classList.toggle("is-future", future && !picking);
     el.futureMark.hidden = !future || picking;
-    el.replay.disabled = !picking && future;
+    el.replay.disabled = !picking && future && el.recapLayer.hidden;
     el.dayPrev.disabled = !picking && viewOffset <= VIEW_MIN;
     el.dayNext.disabled = !picking && viewOffset >= VIEW_MAX;
     if (viewOffset === 0) {
@@ -770,7 +826,16 @@ function consider(checkins) {
     }
     if (future) return;
     var day = viewedDay();
-    if (monsterDay !== day.dayId) paintSettled(day.dayId, checkinsForDay(day.dayId));
+    var checks = checkinsForDay(day.dayId);
+    var beaten = dayBeaten(day.dayId, checks);
+    var sig = day.dayId + "|" + beaten + "|" + checks.map(function (c) {
+      return c.playerId + ":" + c.option;
+    }).join(",");
+    // Repaint when the day's rows arrive late, but never over a replay.
+    if (monsterDay !== day.dayId || (sig !== browseSig && pendingAnims === 0)) {
+      paintSettled(day.dayId, checks, beaten);
+      browseSig = sig;
+    }
   }
 
   function stepPick(delta) {
@@ -943,6 +1008,7 @@ function consider(checkins) {
     var restorePlayers = visualPlayers;
     var restoreOptions = visualOptions;
     var browsing = viewOffset !== 0;
+    if (browsing && !checks.length) return;
     animGen += 1;
     var gen = animGen;
     pendingAnims = 0;
@@ -966,14 +1032,27 @@ function consider(checkins) {
     }
   }
 
+  function isLocalHost() {
+    var host = window.location.hostname;
+    return host === "" || host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+  }
+
   function recapOpen() {
+    if (recapDebug) return true;
     return window.MonsterDay.zonedParts(pacificNow(), CONFIG.timezoneA).weekday === "Sun";
+  }
+
+  // One key per Sunday and person, so the glow comes back next week.
+  function recapSeenKey() {
+    var p = window.MonsterDay.zonedParts(pacificNow(), CONFIG.timezoneA);
+    return p.year + "-" + p.month + "-" + p.day + "|" + playerId;
   }
 
   function updateRecapEnabled() {
     var open = recapOpen();
-    if (el.recap.disabled === !open) return;
-    el.recap.disabled = !open;
+    if (el.recap.disabled !== !open) el.recap.disabled = !open;
+    var seen = open && !recapDebug && storageGet("monster.recapSeen") === recapSeenKey();
+    el.recap.classList.toggle("is-seen", seen);
   }
 
   function defeatedIds() {
@@ -995,10 +1074,7 @@ function consider(checkins) {
   }
 
   function recapCaptionText(dayId) {
-    var traits = window.MonsterArt.traitsFor(dayId);
-    var name = lang === "zh" ? traits.nameZh : traits.nameEn;
-    var day = window.MonsterDay.weekdayLabel(new Date(dayId), CONFIG.timezoneA, lang);
-    return day + " · " + name;
+    return window.MonsterDay.weekdayLabel(new Date(dayId), CONFIG.timezoneA, lang);
   }
 
   function prefersReduced() {
@@ -1013,10 +1089,10 @@ function consider(checkins) {
     el.recapStage.style.transform = "translate3d(" + x.toFixed(1) + "px, -50%, 0)";
   }
 
+  // Layout widths, not screen rects: the face is drawn inside a 3D transform.
   function recapBounds() {
-    var view = el.recapViewport.clientWidth || window.innerWidth;
-    var width = el.recapStage.getBoundingClientRect().width;
-    if (!width) width = Math.min(view * 0.78, 280);
+    var view = el.recapLayer.clientWidth || el.lcd.clientWidth;
+    var width = el.recapStage.offsetWidth || view * 0.46;
     return {
       enter: view + 24,
       center: (view - width) / 2,
@@ -1024,14 +1100,19 @@ function consider(checkins) {
     };
   }
 
-  function recapMove(from, to, ms, gen) {
+  function recapTrioPlace(y) {
+    el.recapTrio.style.transform = "translate3d(0, " + y.toFixed(1) + "px, 0)";
+  }
+
+  function recapMove(from, to, ms, gen, place) {
+    place = place || recapPlace;
     return new Promise(function (resolve) {
       if (gen !== recapGen) {
         resolve(false);
         return;
       }
       if (ms <= 24) {
-        recapPlace(to);
+        place(to);
         resolve(true);
         return;
       }
@@ -1043,7 +1124,7 @@ function consider(checkins) {
         }
         var raw = Math.min(1, (now - start) / ms);
         var p = raw * raw * (3 - 2 * raw);
-        recapPlace(from + (to - from) * p);
+        place(from + (to - from) * p);
         if (raw < 1) requestAnimationFrame(frame);
         else resolve(true);
       }
@@ -1090,14 +1171,60 @@ function consider(checkins) {
     });
   }
 
+  // Every area a person checked in this week, with no reset after a full set.
+  function weekAreas(id, rows) {
+    var areas = { leg: false, chest: false, back: false, rest: false, rested: false };
+    rows.forEach(function (c) {
+      if (c.playerId !== id) return;
+      if (c.option === "rest") areas.rested = true;
+      else areas[c.option] = true;
+    });
+    return areas;
+  }
+
+  // Closing shot: the trio rises through the screen wearing the week's work.
+  function showRecapTrio(gen) {
+    var reduce = prefersReduced();
+    var rows = figureRows();
+    recapDayId = "";
+    el.recapStage.innerHTML = "";
+    el.recapCaption.textContent = "";
+    el.recapCaption.classList.remove("is-empty");
+    el.recapTrio.innerHTML = figureOrder().map(function (p) {
+      var areas = weekAreas(p.id, rows);
+      return (
+        '<div class="figure' + (areas.rested ? " is-rested" : "") + '" data-pose="' + (POSE[p.id] || "auntie") + '">' +
+        heroHtml(p, areas) +
+        '<p class="figure-caption"><span class="figure-name">' + playerName(p) + "</span></p>" +
+        "</div>"
+      );
+    }).join("");
+    el.recapTrio.hidden = false;
+    var view = el.recapLayer.clientHeight || el.lcd.clientHeight;
+    var height = el.recapTrio.offsetHeight;
+    var center = (view - height) / 2;
+    recapTrioPlace(view + 24);
+    return recapMove(view + 24, center, reduce ? 20 : 900, gen, recapTrioPlace).then(function (ok) {
+      if (!ok) return false;
+      return recapWait(reduce ? 1200 : 2200, gen);
+    }).then(function (ok) {
+      if (!ok) return false;
+      return recapMove(center, -height - 24, reduce ? 20 : 900, gen, recapTrioPlace);
+    });
+  }
+
   function stopRecap() {
     recapGen += 1;
     recapDayId = "";
     el.recapLayer.hidden = true;
     el.recapStage.innerHTML = "";
     el.recapStage.style.transform = "";
+    el.recapTrio.hidden = true;
+    el.recapTrio.innerHTML = "";
+    el.recapTrio.style.transform = "";
     el.recapCaption.textContent = "";
     el.recapCaption.classList.remove("is-empty");
+    render();
   }
 
   function startRecap() {
@@ -1107,25 +1234,27 @@ function consider(checkins) {
     var gen = recapGen;
     recapDayId = "";
     el.recapLayer.hidden = false;
-    el.recapClose.textContent = t("recapClose");
+    if (!recapDebug) storageSet("monster.recapSeen", recapSeenKey());
+    render();
+    var chain = Promise.resolve(true);
     if (!ids.length) {
       el.recapStage.innerHTML = "";
       el.recapStage.style.transform = "";
       el.recapCaption.textContent = t("recapEmpty");
       el.recapCaption.classList.add("is-empty");
-      el.recapClose.focus();
       return;
     }
     el.recapCaption.classList.remove("is-empty");
-    el.recapClose.focus();
-    var chain = Promise.resolve(true);
     ids.forEach(function (dayId, index) {
       chain = chain.then(function (ok) {
         if (!ok || gen !== recapGen) return false;
         return showRecapMonster(dayId, index, gen);
       });
     });
-    chain.then(function () {
+    chain.then(function (ok) {
+      if (!ok || gen !== recapGen) return false;
+      return showRecapTrio(gen);
+    }).then(function () {
       if (gen !== recapGen) return;
       stopRecap();
     }).catch(function () {
@@ -1285,6 +1414,28 @@ function consider(checkins) {
     return [others[0], me, others[1]];
   }
 
+  function heroHtml(p, areas) {
+    var cls = "hero " + (POSE[p.id] || "auntie");
+    if (areas.rest) cls += " is-rest";
+    if (areas.leg) cls += " area-leg";
+    if (areas.chest) cls += " area-chest";
+    if (areas.back) cls += " area-back";
+    return (
+      '<div class="' + cls + '" role="img" aria-label="' + figureLabel(p, areas) + '">' +
+      '<div class="layer full"></div>' +
+      '<div class="layer cape"></div>' +
+      '<div class="layer body">' +
+      '<i class="zone torso torso-a"></i>' +
+      '<i class="zone torso torso-b"></i>' +
+      '<i class="zone arms arm-a"></i>' +
+      '<i class="zone arms arm-b"></i>' +
+      '<i class="zone legs leg-a"></i>' +
+      '<i class="zone legs leg-b"></i>' +
+      "</div>" +
+      "</div>"
+    );
+  }
+
   function renderFigures() {
     if (viewOffset > 0 && !picking) {
       el.figures.innerHTML = "";
@@ -1296,30 +1447,13 @@ function consider(checkins) {
     source.forEach(function (c) { today[c.playerId] = c.option; });
     el.figures.innerHTML = figureOrder().map(function (p) {
       var areas = viewOffset === 0 ? areasFor(p.id, rows) : optionAreas(today[p.id]);
-      var cls = "hero " + (POSE[p.id] || "auntie");
-      if (areas.rest) cls += " is-rest";
-      if (areas.leg) cls += " area-leg";
-      if (areas.chest) cls += " area-chest";
-      if (areas.back) cls += " area-back";
       var you = !picking && p.id === playerId;
       var hot = picking && CONFIG.players[pickIndex] && p.id === CONFIG.players[pickIndex].id;
       var marked = picking ? hot : you;
       var opt = today[p.id];
-      var zones = (
-        '<i class="zone torso torso-a"></i>' +
-        '<i class="zone torso torso-b"></i>' +
-        '<i class="zone arms arm-a"></i>' +
-        '<i class="zone arms arm-b"></i>' +
-        '<i class="zone legs leg-a"></i>' +
-        '<i class="zone legs leg-b"></i>'
-      );
       return (
-        '<div class="figure' + (you ? " is-you" : "") + (hot ? " is-hot" : "") + (marked ? " is-marked" : "") + '" data-player="' + p.id + '">' +
-        '<div class="' + cls + '" role="img" aria-label="' + figureLabel(p, areas) + '">' +
-        '<div class="layer full"></div>' +
-        '<div class="layer cape"></div>' +
-        '<div class="layer body">' + zones + "</div>" +
-        "</div>" +
+        '<div class="figure' + (you ? " is-you" : "") + (hot ? " is-hot" : "") + (marked ? " is-marked" : "") + '" data-player="' + p.id + '" data-pose="' + (POSE[p.id] || "auntie") + '">' +
+        heroHtml(p, areas) +
         '<p class="figure-caption">' +
         '<span class="figure-name">' + playerName(p) + "</span>" +
         '<span class="figure-sep" aria-hidden="true">|</span>' +
@@ -1355,7 +1489,8 @@ function consider(checkins) {
 
   function renderOptions() {
     var selected = "";
-    shownCheckins().forEach(function (c) {
+    var source = viewOffset < 0 ? checkinsForDay(viewedDay().dayId) : shownCheckins();
+    source.forEach(function (c) {
       if (c.playerId === playerId) selected = c.option;
     });
     el.options.innerHTML = OPTION_IDS.map(function (id) {
@@ -1431,11 +1566,24 @@ function consider(checkins) {
       return;
     }
     if (viewOffset !== 0) {
-      var day = viewedDay();
-      typeTo(window.MonsterDay.weekdayLabel(new Date(day.dayId), CONFIG.timezoneA, lang));
+      typeTo("");
       return;
     }
     typeTo(t(statusKey()));
+  }
+
+  // "Today, Mon. 2026/10/12". Days further out drop the first word.
+  function renderDayLabel() {
+    var when = new Date(viewedDay().dayId);
+    var p = window.MonsterDay.zonedParts(when, CONFIG.timezoneA);
+    var text = window.MonsterDay.weekdayLabel(when, CONFIG.timezoneA, lang);
+    var near = viewOffset === 0 ? "today" : viewOffset === -1 ? "yesterday" : viewOffset === 1 ? "tomorrow" : "";
+    if (near) {
+      var word = near === "today" ? "<b>" + t(near) + "</b>" : t(near);
+      text = word + (lang === "zh" ? "，" : ", ") + text;
+    }
+    var date = p.year + "/" + String(p.month).padStart(2, "0") + "/" + String(p.day).padStart(2, "0");
+    el.dayLabel.innerHTML = text + (lang === "zh" ? "：" : ". ") + date;
   }
 
   function renderSignal() {
@@ -1451,8 +1599,7 @@ function consider(checkins) {
     return hot ? hot.id : playerId;
   }
 
-  function myColor() {
-    var id = decorId();
+  function colorOf(id) {
     var rows = (state && state.phoneColors) || [];
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].playerId === id) return rows[i].color;
@@ -1460,11 +1607,105 @@ function consider(checkins) {
     return "blue";
   }
 
+  function myColor() {
+    return colorOf(decorId());
+  }
+
   function myStickers() {
     var id = decorId();
     return ((state && state.stickers) || []).filter(function (row) {
       return row.playerId === id;
     });
+  }
+
+  // Everyone has the title sticker. Until it is moved it sits at the
+  // center of the back, where the shell says its home is. Taken off the
+  // phone it keeps a "tray" row, so it waits in the sticker column.
+  function titleRow() {
+    var id = decorId();
+    var rows = myStickers();
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dayId === TITLE_ID) return rows[i];
+    }
+    var home = window.PhoneShell && window.PhoneShell.titleHome;
+    if (!home) return null;
+    return {
+      playerId: id,
+      dayId: TITLE_ID,
+      kind: home.kind,
+      x: home.x,
+      y: home.y,
+      z: home.z,
+      nx: home.nx,
+      ny: home.ny,
+      nz: home.nz,
+    };
+  }
+
+  // Monster stickers, then the title wherever it is.
+  function shownStickers() {
+    var rows = myStickers().filter(function (row) {
+      return row.dayId !== TITLE_ID;
+    });
+    var title = titleRow();
+    if (title) rows.push(title);
+    return rows;
+  }
+
+  // The sticker names whoever's phone is showing, like the shell color does.
+  function titleText() {
+    var name = playerName(playerById(decorId())).trim();
+    return name ? t("titleFor").replace("{name}", name) : t("title");
+  }
+
+  // Shells dark enough that the title needs its brighter rainbow.
+  var DARK_SHELLS = { teal: true, hot: true, orange: true, yellow: true };
+
+  function titleBright() {
+    return !!DARK_SHELLS[myColor()];
+  }
+
+  function titleLines() {
+    var text = titleText();
+    var words = text.split(" ");
+    if (words.length <= 2) return [text, ""];
+    return [words.slice(0, 2).join(" "), words.slice(2).join(" ")];
+  }
+
+  // Sparkles on the title: x, y, size, where in the twinkle each starts, color.
+  // phone.js keeps the same list for the copy on the back.
+  var TITLE_SPARKS = [
+    [88, 16, 7, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 5, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 8, 0.2, "rgba(255, 178, 122, 0.78)"],
+    [128, 66, 5, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 6, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 4, 0.85, "rgba(140, 205, 255, 0.78)"],
+  ];
+
+  function titleSparks() {
+    return TITLE_SPARKS.map(function (s) {
+      var r = s[2];
+      return '<g transform="translate(' + s[0] + " " + s[1] + ')"><path class="title-spark" fill="' + s[4] +
+        '" style="animation-delay:' + (-s[3] * 1.8).toFixed(2) + 's" d="M0 ' + -r + "Q0 0 " + r + " 0Q0 0 0 " + r + "Q0 0 " + -r + " 0Q0 0 0 " + -r + 'Z"/></g>';
+    }).join("");
+  }
+
+  function titleSvg() {
+    var lines = titleLines();
+    var y1 = lines[1] ? 32 : 48;
+    function line(cls, y, text, extra) {
+      return '<text class="' + cls + '" x="210" y="' + y + '" text-anchor="middle"' + extra + ">" +
+        text.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</text>";
+    }
+    return '<svg viewBox="0 0 420 74" width="400" height="70" role="presentation"' +
+      (titleBright() ? ' class="is-bright"' : "") + ">" +
+      line("title-rim", y1, lines[0], ' aria-hidden="true"') +
+      line("title-rim", 60, lines[1], ' aria-hidden="true"') +
+      line("title-edge", y1, lines[0], ' aria-hidden="true"') +
+      line("title-edge", 60, lines[1], ' aria-hidden="true"') +
+      line("title-fill", y1, lines[0], "") +
+      line("title-fill", 60, lines[1], "") +
+      line("title-sheen", y1, lines[0], ' aria-hidden="true"') +
+      line("title-sheen", 60, lines[1], ' aria-hidden="true"') +
+      titleSparks() +
+      "</svg>";
   }
 
   function catalogIds() {
@@ -1524,16 +1765,34 @@ function consider(checkins) {
     });
   }
 
+  // Saves go out one at a time, in the order they were made, so a slow early
+  // save cannot land after a later one. A newer move of the same sticker, or
+  // a newer color, replaces one that has not been sent yet.
   function decorPost(body) {
     if (!scriptUrl()) return;
-    decorWrites += 1;
-    request("POST", body).then(function (next) {
+    decorSeq += 1;
+    var key = body.action === "color" ? "color" : "sticker|" + body.dayId;
+    decorQueue = decorQueue.filter(function (job) { return job.key !== key; });
+    decorQueue.push({ key: key, body: body });
+    decorWrites = decorQueue.length + (decorBusy ? 1 : 0);
+    sendDecor();
+  }
+
+  function sendDecor() {
+    if (decorBusy || !decorQueue.length) return;
+    var job = decorQueue.shift();
+    decorBusy = true;
+    request("POST", job.body).then(function (next) {
+      decorBusy = false;
+      decorWrites = decorQueue.length;
       applyState(next);
     }).catch(function () {
       // Keep the color and stickers on this phone. A failed save
       // should not replace the workout status line.
     }).finally(function () {
-      decorWrites -= 1;
+      decorBusy = false;
+      decorWrites = decorQueue.length;
+      sendDecor();
     });
   }
 
@@ -1542,16 +1801,28 @@ function consider(checkins) {
     var shell = window.PhoneShell;
     if (shell) {
       shell.setColor(myColor());
-      shell.setStickers(myStickers());
+      shell.setStickers(shownStickers());
+      // The envelope glows in the same plastic as the case.
+      var swatch = shell.swatches[myColor()] || shell.swatches.blue;
+      el.recap.style.setProperty("--mail-glow", swatch[0]);
+      el.recap.style.setProperty("--mail-glow-deep", swatch[1]);
     }
     if (el.faceStickers) {
       el.faceStickers.innerHTML = myStickers().filter(function (row) {
-        return row.kind === "face";
+        return row.kind === "face" && row.dayId !== TITLE_ID;
       }).map(function (row) {
         return '<button type="button" class="stuck-face" data-day="' + row.dayId +
           '" style="left:' + row.x + "px;top:" + row.y + 'px">' + stickerWrap(row.dayId) + "</button>";
       }).join("");
     }
+    var title = titleRow();
+    var onFace = !!title && title.kind === "face";
+    el.titleSticker.hidden = !onFace;
+    if (onFace) {
+      el.titleSticker.style.left = title.x + "px";
+      el.titleSticker.style.top = title.y + "px";
+    }
+    el.titleSticker.classList.toggle("is-grab", decorateOpen && !picking);
     if (!decorateOpen || !el.colorCol || !el.stickerCol) return;
     var order = shell ? shell.order : ["teal", "pink", "hot", "green", "purple", "yellow", "blue", "orange", "grey"];
     var swatches = shell ? shell.swatches : {};
@@ -1565,7 +1836,11 @@ function consider(checkins) {
     }).join("");
     var placed = {};
     myStickers().forEach(function (row) { placed[row.dayId] = true; });
-    el.stickerCol.innerHTML = catalogIds().filter(function (id) {
+    var titleBtn = title && title.kind === "tray"
+      ? '<button type="button" class="sticker-btn title-btn" data-day="' + TITLE_ID + '"' +
+        (picking ? " disabled" : "") + ">" + titleSvg() + "</button>"
+      : "";
+    el.stickerCol.innerHTML = titleBtn + catalogIds().filter(function (id) {
       return !placed[id];
     }).map(function (id) {
       return '<button type="button" class="sticker-btn" data-day="' + id + '"' + (picking ? " disabled" : "") + ">" + stickerWrap(id) + "</button>";
@@ -1582,13 +1857,14 @@ function consider(checkins) {
     if (!dayId || drag || picking) return;
     drag = { dayId: dayId, placed: placed, src: src };
     if (src) src.style.opacity = "0.25";
-    el.ghost.innerHTML = stickerWrap(dayId);
+    el.ghost.classList.toggle("is-title", dayId === TITLE_ID);
+    el.ghost.innerHTML = dayId === TITLE_ID ? titleSvg() : stickerWrap(dayId);
     el.ghost.hidden = false;
     moveGhost(event.clientX, event.clientY);
     if (window.PhoneShell) {
       window.PhoneShell.setDragging(true);
       if (placed) {
-        window.PhoneShell.setStickers(myStickers().filter(function (row) {
+        window.PhoneShell.setStickers(shownStickers().filter(function (row) {
           return row.dayId !== dayId;
         }));
       }
@@ -1603,7 +1879,9 @@ function consider(checkins) {
     drag = null;
     if (info.src) info.src.style.opacity = "";
     if (window.PhoneShell) window.PhoneShell.setDragging(false);
-    var hit = playerId && window.PhoneShell && window.PhoneShell.hitTest(event.clientX, event.clientY);
+    var isTitle = info.dayId === TITLE_ID;
+    var hit = playerId && window.PhoneShell &&
+      window.PhoneShell[isTitle ? "hitTitle" : "hitTest"](event.clientX, event.clientY);
     if (hit) {
       setLocalSticker({
         playerId: playerId,
@@ -1632,7 +1910,12 @@ function consider(checkins) {
       });
       return;
     }
-    if (info.placed && playerId) clearLocalSticker(info.dayId);
+    // No row would send the title back to its home on the back of the phone.
+    if (isTitle && info.placed && playerId) {
+      setLocalSticker({ playerId: playerId, dayId: TITLE_ID, kind: "tray", x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0 });
+    } else if (info.placed && playerId) {
+      clearLocalSticker(info.dayId);
+    }
     renderDecor();
     var slot = el.stickerCol.querySelector('[data-day="' + info.dayId + '"]');
     var rect = slot ? slot.getBoundingClientRect() : null;
@@ -1649,31 +1932,27 @@ function consider(checkins) {
     }
   }
 
+  function renderTitle() {
+    var lines = titleLines();
+    el.titleSticker.innerHTML = titleSvg();
+    if (window.PhoneShell) window.PhoneShell.setTitle(lines[0], lines[1], titleBright());
+  }
+
   function render() {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
     document.title = t("title");
-    var titleText = t("title");
-    var titleLines = titleText.split(" ");
-    var line1 = titleLines.length > 2 ? titleLines.slice(0, 2).join(" ") : titleText;
-    var line2 = titleLines.length > 2 ? titleLines.slice(2).join(" ") : "";
-    el.title.textContent = line1;
-    el.title2.textContent = line2;
-    el.titleEdge.textContent = line1;
-    el.titleEdge2.textContent = line2;
-    var y1 = line2 ? "32" : "48";
-    el.title.setAttribute("y", y1);
-    el.titleEdge.setAttribute("y", y1);
+    renderTitle();
     el.langGroup.setAttribute("aria-label", t("langGroup"));
     el.langToggle.textContent = lang === "zh" ? "EN" : "中文";
     el.dayPrev.setAttribute("aria-label", t(picking ? "prevUser" : "prevDay"));
     el.dayNext.setAttribute("aria-label", t(picking ? "nextUser" : "nextDay"));
-    el.replay.setAttribute("aria-label", t(pwOpen ? "pwSubmit" : picking ? "chooseUser" : "replay"));
+    var recapOn = !el.recapLayer.hidden;
+    el.replay.setAttribute("aria-label", t(recapOn ? "recapClose" : pwOpen ? "pwSubmit" : picking ? "chooseUser" : "replay"));
     el.recap.setAttribute("aria-label", t("recap"));
     updateRecapEnabled();
-    el.recapClose.textContent = t("recapClose");
-    if (!el.recapLayer.hidden) {
-      el.recapCaption.textContent = recapDayId ? recapCaptionText(recapDayId) : t("recapEmpty");
-      el.recapCaption.classList.toggle("is-empty", !recapDayId);
+    if (recapOn) {
+      if (recapDayId) el.recapCaption.textContent = recapCaptionText(recapDayId);
+      else if (el.recapCaption.classList.contains("is-empty")) el.recapCaption.textContent = t("recapEmpty");
     }
     el.who.textContent = t("who");
     el.switchName.textContent = t("switchName");
@@ -1686,6 +1965,7 @@ function consider(checkins) {
     renderChoices();
     renderPips();
     renderSignal();
+    renderDayLabel();
     renderStatus();
     renderPassword();
     syncBrowse();
@@ -1714,7 +1994,8 @@ function consider(checkins) {
     setLang(lang === "en" ? "zh" : "en");
   });
   el.replay.addEventListener("click", function () {
-    if (pwOpen) submitPassword();
+    if (!el.recapLayer.hidden) stopRecap();
+    else if (pwOpen) submitPassword();
     else if (picking) confirmPick();
     else replayView();
   });
@@ -1775,9 +2056,15 @@ function consider(checkins) {
   el.remain.addEventListener("animationend", function () {
     el.remain.classList.remove("is-pop");
   });
-  el.recapLayer.addEventListener("click", function () { stopRecap(); });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && !el.recapLayer.hidden) stopRecap();
+    // Local debugging: Alt+S turns the Sunday envelope on and off.
+    if (event.altKey && event.code === "KeyS" && isLocalHost()) {
+      event.preventDefault();
+      recapDebug = !recapDebug;
+      if (!recapOpen() && !el.recapLayer.hidden) stopRecap();
+      updateRecapEnabled();
+    }
   });
   el.decorate.addEventListener("click", function () {
     decorateOpen = !decorateOpen;
@@ -1792,6 +2079,7 @@ function consider(checkins) {
     var color = btn.getAttribute("data-color");
     if (!PHONE_COLORS[color]) return;
     setLocalColor(color);
+    renderTitle();
     renderDecor();
     decorPost({ action: "color", playerId: playerId, color: color });
   });
@@ -1800,6 +2088,10 @@ function consider(checkins) {
     if (!btn) return;
     beginDrag(btn.getAttribute("data-day"), false, btn, event);
   });
+  el.titleSticker.addEventListener("pointerdown", function (event) {
+    if (!decorateOpen) return;
+    beginDrag(TITLE_ID, true, el.titleSticker, event);
+  });
   el.faceStickers.addEventListener("pointerdown", function (event) {
     var btn = event.target.closest(".stuck-face");
     if (!btn) return;
@@ -1807,7 +2099,7 @@ function consider(checkins) {
   });
   document.addEventListener("pointerdown", function (event) {
     if (!decorateOpen || drag || !window.PhoneShell) return;
-    if (event.target.closest && event.target.closest("#decorate, .deco-col, .stuck-face, button")) return;
+    if (event.target.closest && event.target.closest("#decorate, .deco-col, .stuck-face, .title-sticker, button")) return;
     var dayId = window.PhoneShell.pickSticker(event.clientX, event.clientY);
     if (!dayId) return;
     beginDrag(dayId, true, null, event);
@@ -1818,7 +2110,10 @@ function consider(checkins) {
   });
   document.addEventListener("pointerup", endDrag);
   document.addEventListener("pointercancel", endDrag);
-  window.addEventListener("phone-ready", function () { renderDecor(); });
+  window.addEventListener("phone-ready", function () {
+    renderTitle();
+    renderDecor();
+  });
   el.switchName.addEventListener("click", function () {
     if (pwOpen) closePassword();
     openPicker();

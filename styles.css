@@ -7,6 +7,44 @@
   --accent: #ff8a5b;
 }
 
+@font-face {
+  font-family: "Geist Pixel";
+  src: url("fonts/GeistPixel-Regular-VariableFont_ELSH.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Ranged to skip CJK: the font only covers the Japanese subset, so Chinese
+   text would otherwise render half pixel, half system font. */
+@font-face {
+  font-family: "DotGothic16";
+  src: url("fonts/DotGothic16-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-2FFF;
+}
+
+@font-face {
+  font-family: "Noto Sans Coptic";
+  src: url("fonts/NotoSansCoptic-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Slackside's caps are about three quarters the height of Bagel Fat One's;
+   size-adjust keeps the sticker lettering the size it was at 26px. */
+@font-face {
+  font-family: "Slackside One";
+  src: url("fonts/SlacksideOne-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 135%;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -95,6 +133,8 @@ button:disabled { cursor: default; }
 #phone-face .face-stickers { pointer-events: none !important; }
 #phone-face .stuck-face,
 #phone-face .stuck-face * { pointer-events: auto !important; }
+#phone-face .title-sticker.is-grab,
+#phone-face .title-sticker.is-grab * { pointer-events: auto !important; }
 
 body.no-3d { overflow: auto; }
 body.no-3d #view { display: none; }
@@ -168,21 +208,44 @@ body.no-3d #phone-face {
   box-shadow: 0 0 0 2px #e7f4fc, 0 1px 2px rgba(20, 50, 80, 0.35);
 }
 
+/* The title is a sticker. app.js sets left and top from where it was stuck. */
 .title-sticker {
-  position: relative;
-  z-index: 2;
+  position: absolute;
+  z-index: 6;
   display: block;
-  margin: 0 0 -6px;
-  transform: rotate(-6deg) translateY(26px);
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-6deg);
   filter: drop-shadow(2px 4px 2px rgba(20, 55, 100, 0.32));
+  touch-action: none;
 }
 
-.title-sticker svg { display: block; overflow: visible; }
+.title-sticker[hidden] { display: none; }
+.title-sticker.is-grab { cursor: grab; }
 
+.title-sticker svg,
+.sticker-ghost.is-title svg { display: block; overflow: visible; }
+
+/* Without the 3D shell there is no back to look at. */
+body.no-3d .title-sticker {
+  display: block;
+  left: 260px !important;
+  top: 99px !important;
+}
+
+.title-rim,
 .title-edge,
-.title-fill {
-  font-family: "Bagel Fat One", "ZCOOL KuaiLe", "Arial Black", sans-serif;
+.title-fill,
+.title-sheen {
+  font-family: "Slackside One", "ZCOOL KuaiLe", "Arial Black", sans-serif;
   font-size: 26px;
+}
+
+/* A thin dark line outside the white edge, so the words read on any shell. */
+.title-rim {
+  fill: none;
+  stroke: #2a2f5a;
+  stroke-width: 9.5px;
+  stroke-linejoin: round;
 }
 
 .title-edge {
@@ -194,6 +257,26 @@ body.no-3d #phone-face {
 }
 
 .title-fill { fill: url("#holo"); }
+
+/* On the darker shells the pastels wash out, so the rainbow is stronger. */
+.is-bright .title-fill { fill: url("#holo-bright"); }
+
+/* A white glint that sweeps over the rainbow. */
+.title-sheen { fill: url("#holo-sheen"); }
+
+.title-spark {
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 0.8px;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: title-twinkle 1.8s ease-in-out infinite;
+}
+
+@keyframes title-twinkle {
+  0%, 100% { opacity: 0.1; transform: scale(0.25); }
+  50% { opacity: 1; transform: scale(1); }
+}
 
 .bezel {
   flex: 0 0 auto;
@@ -225,6 +308,9 @@ body.no-3d #phone-face {
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 28%),
     var(--lcd);
   color: var(--ink);
+  /* DotGothic16 ships one weight; faux bold would smear the pixels. */
+  font-family: "DotGothic16", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", monospace;
+  font-synthesis-weight: none;
   box-shadow: inset 0 0 0 2px rgba(40, 48, 16, 0.35);
 }
 
@@ -248,6 +334,22 @@ body.no-3d #phone-face {
 
 .signal { top: 4px; left: 4px; min-width: 52px; min-height: 40px; }
 .mail { top: 6px; left: 62px; min-width: 48px; min-height: 40px; color: var(--ink); }
+
+.day-label {
+  position: absolute;
+  z-index: 5;
+  top: 48px;
+  left: 10px;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.day-label b { font-weight: 800; }
 
 .bars {
   display: flex;
@@ -280,13 +382,19 @@ body.no-3d #phone-face {
   filter: grayscale(1);
 }
 
-.mail:not(:disabled) {
+/* Every case color gets a brighter and a darker shade for the pulse. */
+.mail {
+  --mail-bright: color-mix(in srgb, var(--mail-glow, #ffe14a) 45%, #fff);
+  --mail-dark: color-mix(in srgb, var(--mail-glow-deep, #ffb703) 78%, #000);
+}
+
+.mail:not(:disabled):not(.is-seen) {
   animation: mail-glow 1.15s ease-in-out infinite;
 }
 
 @keyframes mail-glow {
-  0%, 100% { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 5px #ffe14a); }
-  50% { filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px #ffe14a) drop-shadow(0 0 14px #ffb703); }
+  0%, 100% { filter: drop-shadow(0 0 2px var(--mail-bright)) drop-shadow(0 0 5px var(--mail-glow, #ffe14a)); }
+  50% { filter: drop-shadow(0 0 3px var(--mail-bright)) drop-shadow(0 0 8px var(--mail-glow, #ffe14a)) drop-shadow(0 0 14px var(--mail-dark)); }
 }
 
 .batt-block {
@@ -339,7 +447,7 @@ body.no-3d #phone-face {
   margin: 0;
   max-width: 100%;
   text-align: right;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 800;
   line-height: 1.15;
   color: var(--ink);
@@ -347,10 +455,18 @@ body.no-3d #phone-face {
 
 .batt-label.main {
   display: inline-block;
-  font-size: 15px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   transform-origin: 100% 50%;
+}
+
+/* The negative margin eats the trailing gap so the label stays flush right. */
+:lang(zh) .batt-label.main {
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  max-width: none;
+  margin-right: 0 em;
 }
 
 .batt-label.main.is-pop {
@@ -446,7 +562,7 @@ body.no-3d #phone-face {
   margin: 0;
   text-align: center;
   color: #3e4a20;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.25;
 }
@@ -462,7 +578,7 @@ body.no-3d #phone-face {
   margin: 0;
   min-height: 1.2em;
   text-align: center;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1.25;
   color: var(--ink);
@@ -534,7 +650,7 @@ body.no-3d #phone-face {
   border: 1px solid #6d90b0;
   background: linear-gradient(180deg, #f8fbff 0%, #d7e4f2 46%, #b5cce2 100%);
   color: var(--key);
-  font-family: "Trebuchet MS", "Verdana", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans Coptic", "Trebuchet MS", "Verdana", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-weight: 800;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
   box-shadow:
@@ -604,6 +720,7 @@ body.no-3d #phone-face {
   z-index: 3;
   inset: 0;
   margin: 0;
+  padding-top: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -657,7 +774,7 @@ body.no-3d #phone-face {
   border-radius: 12px;
   background: linear-gradient(180deg, #f8fbff 0%, #d7e4f2 46%, #b5cce2 100%);
   color: var(--key);
-  font-family: "Trebuchet MS", "Verdana", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Noto Sans Coptic", "Trebuchet MS", "Verdana", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-weight: 800;
   font-size: 20px;
   line-height: 1.1;
@@ -701,8 +818,7 @@ body.no-3d #phone-face {
 .choice:focus-visible,
 .langs button:focus-visible,
 .switch-key:focus-visible,
-.hud:focus-visible,
-.recap-close:focus-visible {
+.hud:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
@@ -736,12 +852,17 @@ body.no-3d #phone-face {
 
 .anchor-figures .figure {
   flex: 0 0 auto;
-  width: auto;
+  width: max(var(--slot), calc(var(--h) * var(--ar)));
   min-width: 0;
   overflow: visible;
 }
 
+/* --h is the art height and --ar its PNG ratio. The art box and the slot are
+   both worked out from those two, so caption text never sets either one. */
 .figure {
+  --h: 72px;
+  --ar: calc(260 / 358);
+  --slot: 66px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -749,14 +870,18 @@ body.no-3d #phone-face {
   overflow: hidden;
 }
 
+.figure[data-pose="shelby"] { --ar: calc(207 / 371); }
+.figure[data-pose="bernice"] { --ar: calc(243 / 380); }
+
 .figure-caption {
   margin: 1px 0 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
-  max-width: 100%;
-  font-size: 10px;
+  width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 11px;
   font-weight: 800;
   line-height: 1.15;
   text-align: center;
@@ -777,11 +902,14 @@ body.no-3d #phone-face {
   gap: 2px;
 }
 
+.figure-name,
+.figure-move { max-width: 100%; }
+
 .figure-sep { color: #4d5a30; font-weight: 700; }
-.figure-move { font-weight: 700; color: #3d4a28; }
+.figure-move { font-weight: 700; color: #3d4a28; letter-spacing: 0.08em; }
 .figure-move.chosen { color: #8a3d12; }
 
-.figure.is-you .hero { height: 144px; }
+.figure.is-you { --h: 144px; }
 .figure.is-hot .hero {
   transform: scale(1.06);
   filter: drop-shadow(0 0 1px #16325a) drop-shadow(0 0 5px #16325a);
@@ -805,15 +933,16 @@ body.no-3d #phone-face {
 
 .lcd.is-picking .figure:first-child { justify-self: end; }
 .lcd.is-picking .figure:last-child { justify-self: start; }
-.lcd.is-picking .figure .hero { height: 96px; opacity: 0.6; }
+.lcd.is-picking .figure { --h: 96px; --slot: 56px; }
+.lcd.is-picking .figure.is-hot { --h: 176px; }
+.lcd.is-picking .figure .hero { opacity: 0.6; }
 .lcd.is-picking .figure.is-hot .hero {
-  height: 176px;
   opacity: 1;
   transform: none;
   filter: drop-shadow(0 0 1px #16325a) drop-shadow(0 0 6px #fff8d2) drop-shadow(0 0 12px #fff8d2);
 }
-.lcd.is-picking .figure-caption { font-size: 12px; margin-top: 4px; }
-.lcd.is-picking .figure.is-hot .figure-caption { font-size: 15px; }
+.lcd.is-picking .figure-caption { font-size: 13px; margin-top: 4px; }
+.lcd.is-picking .figure.is-hot .figure-caption { font-size: 16px; }
 .lcd.is-picking .figure-move { display: none; }
 
 /* Password screen: only the chosen figure stays, with the entry box under it. */
@@ -836,8 +965,7 @@ body.no-3d #phone-face {
   border: 3px solid var(--ink);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.28);
-  font-family: "Courier New", monospace;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 800;
   color: var(--ink);
   white-space: pre;
@@ -878,14 +1006,12 @@ body.no-3d #phone-face {
   --fig-done: #2faf5f;
   --fig-rest: #f278a8;
   position: relative;
-  height: 72px;
-  width: auto;
-  max-width: 100%;
+  flex: none;
+  height: var(--h);
+  width: calc(var(--h) * var(--ar));
+  max-width: none;
 }
 
-.hero.auntie { aspect-ratio: 260 / 358; }
-.hero.shelby { aspect-ratio: 207 / 371; }
-.hero.bernice { aspect-ratio: 243 / 380; }
 .hero.is-rest { --fig: var(--fig-rest); }
 
 .layer {
@@ -984,83 +1110,87 @@ body.no-3d #phone-face {
 .hero.bernice .leg-a { -webkit-clip-path: polygon(34% 56%, 66% 54%, 58% 78%, 40% 72%); clip-path: polygon(34% 56%, 66% 54%, 58% 78%, 40% 72%); }
 .hero.bernice .leg-b { -webkit-clip-path: polygon(8% 62%, 48% 58%, 42% 100%, 4% 100%); clip-path: polygon(8% 62%, 48% 58%, 42% 100%, 4% 100%); }
 
+/* Sits over the whole LCD, HUD included, and plays inside the screen. */
 .recap-layer {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 40;
-  background: rgba(61, 44, 41, 0.35);
+  z-index: 6;
+  overflow: hidden;
+  background:
+    linear-gradient(122deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 28%),
+    var(--lcd);
+  color: var(--ink);
 }
 
 .recap-layer[hidden] { display: none !important; }
 
-.recap-viewport {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: min(100%, 480px);
-  transform: translateX(-50%);
-  overflow: hidden;
-  background:
-    radial-gradient(90% 42% at 50% -10%, #ffe3c4 0%, rgba(255, 246, 232, 0) 68%),
-    var(--paper);
-  color: #3d2c29;
-}
-
-.recap-close {
-  position: absolute;
-  z-index: 5;
-  top: calc(12px + env(safe-area-inset-top));
-  right: calc(12px + env(safe-area-inset-right));
-  min-height: 44px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  border: 3px solid #3d2c29;
-  background: #fff;
-  box-shadow: 3px 3px 0 #3d2c29;
-  font-weight: 800;
-  font-size: 15px;
-  color: #3d2c29;
-}
-
 .recap-stage {
   position: absolute;
-  top: 46%;
+  top: 52%;
   left: 0;
-  width: min(78%, 280px);
-  height: min(48%, 360px);
-  pointer-events: none;
+  width: 46%;
+  aspect-ratio: 156 / 162;
 }
 
 .recap-stage .monster-svg { width: 100%; height: 100%; }
 
 .recap-caption {
   position: absolute;
-  z-index: 5;
-  left: 20px;
-  right: 20px;
-  top: 72%;
+  left: 8px;
+  right: 8px;
+  bottom: 10px;
   margin: 0;
   text-align: center;
-  font-size: 22px;
+  font-size: 19px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   line-height: 1.25;
 }
 
+.recap-trio {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 16px;
+}
+
+.recap-trio[hidden] { display: none !important; }
+
+.recap-trio .figure {
+  --h: 170px;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+/* Rested this week: a pink halo, so the green areas stay readable. */
+.recap-trio .figure.is-rested .hero {
+  filter: drop-shadow(0 0 2px #f278a8) drop-shadow(0 0 7px #f278a8) drop-shadow(0 0 14px #f278a8);
+}
+
+.recap-trio .figure-caption {
+  margin-top: 4px;
+  font-size: 16px;
+}
+
 .recap-caption.is-empty {
-  top: 46%;
+  top: 50%;
   bottom: auto;
   transform: translateY(-50%);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stage-wrap { animation: none; }
-  .title-sticker svg animate { display: none; }
-  .mail:not(:disabled) { animation: none; filter: drop-shadow(0 0 6px #ffe14a); }
+  .mail:not(:disabled):not(.is-seen) { animation: none; filter: drop-shadow(0 0 6px var(--mail-glow, #ffe14a)); }
   .lcd-desc::after { animation: none; }
-  .option:active, .choice:active, .switch-key:active, .recap-close:active { transform: none; }
+  .option:active, .choice:active, .switch-key:active { transform: none; }
   .sticker-sheen-band { animation: none; }
+  .title-spark { animation: none; }
+  .title-sheen { display: none; }
 }
 
 .decorate-btn {
@@ -1154,6 +1284,24 @@ body.no-3d #phone-face {
   touch-action: none;
 }
 
+/* The title waits in the column on its side, reading upward. */
+.title-btn {
+  position: relative;
+  height: 172px;
+}
+
+.title-btn svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 250px;
+  height: 44px;
+  overflow: visible;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  filter: drop-shadow(0 2px 3px rgba(40, 20, 70, 0.16));
+  pointer-events: none;
+}
+
 .stuck-face {
   position: absolute;
   width: 72px;
@@ -1220,5 +1368,14 @@ body.no-3d #phone-face {
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
+
+.sticker-ghost.is-title {
+  width: 240px;
+  height: 42px;
+  transform: translate(-50%, -50%) rotate(-6deg);
+  filter: drop-shadow(2px 4px 2px rgba(20, 55, 100, 0.32));
+}
+
+.sticker-ghost.is-title svg { width: 100%; height: 100%; }
 
 .sticker-ghost[hidden] { display: none !important; }

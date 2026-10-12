@@ -17,6 +17,34 @@ const RIGHT_Y = -180;
 const SIDE_STICK = 12;
 const BTN_Z = 32;
 
+// The title sticker. It is drawn on a canvas so it can sit on the back.
+// TITLE_W / TITLE_H match the svg in app.js; the canvas is a little taller
+// so the bottom line's edge and shadow are not cut off.
+const TITLE_ID = "title";
+const TITLE_W = 400;
+const TITLE_H = 80;
+const TITLE_VIEW_W = 420;
+const TITLE_VIEW_H = 84;
+const TITLE_PAD_Y = 5;
+const TITLE_SCALE = 3;
+const TITLE_TILT = 6 * Math.PI / 180;
+const TITLE_FONT = '26px "Slackside One", "ZCOOL KuaiLe", "Arial Black", sans-serif';
+const TITLE_HOME = { kind: "mesh", x: 0, y: -10, z: -DEPTH / 2 - 8, nx: 0, ny: 0, nz: -1 };
+const TITLE_RIM = "#2a2f5a";
+// Same sparkles as TITLE_SPARKS in app.js: x, y, size, twinkle phase, color.
+const SPARKS = [
+  [88, 16, 7, 0, "rgba(255, 150, 196, 0.78)"], [214, 5, 5, 0.45, "rgba(140, 205, 255, 0.78)"], [334, 20, 8, 0.2, "rgba(255, 178, 122, 0.78)"],
+  [128, 66, 5, 0.7, "rgba(255, 178, 122, 0.78)"], [296, 68, 6, 0.55, "rgba(255, 150, 196, 0.78)"], [362, 50, 4, 0.85, "rgba(140, 205, 255, 0.78)"],
+];
+const HOLO_BRIGHT = [
+  [0, "#ff3d9a"], [0.16, "#ff8a1f"], [0.32, "#f5c400"], [0.48, "#22c96b"],
+  [0.64, "#12b5e8"], [0.8, "#5b6bff"], [0.9, "#b44dff"], [1, "#ff3d9a"],
+];
+const HOLO = [
+  [0, "#ff9ec7"], [0.16, "#ffbd94"], [0.32, "#ffe082"], [0.48, "#9fe6b0"],
+  [0.64, "#93d8f5"], [0.8, "#a5b1ff"], [0.9, "#d2a6ff"], [1, "#ff9ec7"],
+];
+
 const view = document.getElementById("view");
 const faceEl = document.getElementById("phone-face");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -43,6 +71,12 @@ let leftBtn;
 let rightBtn;
 let stickerGroup;
 const stickerTex = {};
+let titleCanvas;
+let titleEdge;
+let titleTex;
+let titleLines = ["", ""];
+let titleShown = false;
+let titleBright = false;
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
@@ -177,15 +211,24 @@ function lcdBox() {
   while (node && node !== faceEl) {
     x += node.offsetLeft;
     y += node.offsetTop;
+    // The bezel is nudged down with a transform, which offsetTop leaves out.
+    const shift = getComputedStyle(node).transform;
+    if (shift && shift !== "none") {
+      const m = new DOMMatrixReadOnly(shift);
+      x += m.m41;
+      y += m.m42;
+    }
     node = node.offsetParent;
   }
   return { x: x, y: y, w: lcd.offsetWidth, h: lcd.offsetHeight };
 }
 
-function overlapsScreen(fx, fy) {
+function overlapsScreen(fx, fy, w, h) {
   const box = lcdBox();
   if (!box) return false;
-  const sticker = { x: fx - 36, y: fy - 39, w: 72, h: 78 };
+  const sw = w || 72;
+  const sh = h || 78;
+  const sticker = { x: fx - sw / 2, y: fy - sh / 2, w: sw, h: sh };
   return sticker.x < box.x + box.w && sticker.x + sticker.w > box.x &&
     sticker.y < box.y + box.h && sticker.y + sticker.h > box.y;
 }
@@ -200,13 +243,53 @@ function localHit(clientX, clientY, targets) {
   return hits.length ? hits[0] : null;
 }
 
-function hitTest(clientX, clientY) {
+function shellHit(clientX, clientY) {
   const hit = localHit(clientX, clientY, shellTargets());
   if (!hit) return null;
   const localPoint = phone.worldToLocal(hit.point.clone());
   const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
   const inv = new THREE.Matrix4().copy(phone.matrixWorld).invert();
   const localNormal = worldNormal.clone().transformDirection(inv);
+  return { point: localPoint, normal: localNormal };
+}
+
+function clamp(value, lo, hi) {
+  return Math.min(hi, Math.max(lo, value));
+}
+
+// The title is wide, so it only lies flat on the front or the back, and it
+// slides in from the edges instead of hanging off them. It may lap over the
+// rim of the screen, as it always has, but its middle stays off the screen.
+function hitTitle(clientX, clientY) {
+  const hit = shellHit(clientX, clientY);
+  if (!hit) return null;
+  const padX = 170;
+  const padY = 44;
+  if (hit.normal.z > 0.55) {
+    const fx = clamp(hit.point.x + FACE_W / 2, padX, FACE_W - padX);
+    const fy = clamp(FACE_H / 2 - hit.point.y, padY, FACE_H - padY);
+    if (overlapsScreen(fx, fy, 240, 2)) return null;
+    return { kind: "face", x: fx, y: fy, z: 0, nx: 0, ny: 0, nz: 1 };
+  }
+  if (hit.normal.z < -0.55) {
+    return {
+      kind: "mesh",
+      x: clamp(hit.point.x, padX - FACE_W / 2, FACE_W / 2 - padX),
+      y: clamp(hit.point.y, padY - FACE_H / 2, FACE_H / 2 - padY),
+      z: TITLE_HOME.z,
+      nx: 0,
+      ny: 0,
+      nz: -1,
+    };
+  }
+  return null;
+}
+
+function hitTest(clientX, clientY) {
+  const hit = shellHit(clientX, clientY);
+  if (!hit) return null;
+  const localPoint = hit.point;
+  const localNormal = hit.normal;
   if (localNormal.z > 0.55) {
     const fx = localPoint.x + FACE_W / 2;
     const fy = FACE_H / 2 - localPoint.y;
@@ -249,6 +332,131 @@ function stickerTexture(dayId) {
   return tex;
 }
 
+function holoFill(g, now) {
+  const p = reduceMotion ? 0 : (now % 3200) / 3200;
+  const spans = 6;
+  const x0 = (p - 1) * 150;
+  const y0 = 8 + (p - 1) * 20;
+  const grad = g.createLinearGradient(x0, y0, x0 + 150 * spans, y0 + 20 * spans);
+  for (let k = 0; k < spans; k++) {
+    (titleBright ? HOLO_BRIGHT : HOLO).forEach(function (stop) {
+      grad.addColorStop((k + stop[0]) / spans, stop[1]);
+    });
+  }
+  return grad;
+}
+
+function titleInk(g) {
+  g.setTransform(TITLE_SCALE, 0, 0, TITLE_SCALE, 0, TITLE_PAD_Y * TITLE_SCALE);
+  g.font = TITLE_FONT;
+  g.textAlign = "center";
+  g.lineJoin = "round";
+}
+
+function eachTitleLine(draw) {
+  const two = !!titleLines[1];
+  draw(titleLines[0], two ? 32 : 48);
+  if (two) draw(titleLines[1], 60);
+}
+
+// The dark rim, the white edge and the shadow only change with the words,
+// so they are kept on their own canvas and the moving fill is drawn over them.
+function paintTitleEdge() {
+  const g = titleEdge.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, titleEdge.width, titleEdge.height);
+  titleInk(g);
+  g.strokeStyle = TITLE_RIM;
+  g.lineWidth = 9.5;
+  g.shadowColor = "rgba(20, 55, 100, 0.32)";
+  g.shadowOffsetX = 2 * TITLE_SCALE;
+  g.shadowOffsetY = 4 * TITLE_SCALE;
+  g.shadowBlur = 2 * TITLE_SCALE;
+  eachTitleLine(function (text, y) { g.strokeText(text, TITLE_VIEW_W / 2, y); });
+  g.shadowColor = "transparent";
+  g.fillStyle = "#fff";
+  g.strokeStyle = "#fff";
+  g.lineWidth = 7;
+  eachTitleLine(function (text, y) {
+    g.strokeText(text, TITLE_VIEW_W / 2, y);
+    g.fillText(text, TITLE_VIEW_W / 2, y);
+  });
+}
+
+// A white glint that sweeps over the rainbow, as #holo-sheen does on the front.
+function sheenFill(g, now) {
+  const x = -120 + 580 * ((now % 2600) / 2600);
+  const grad = g.createLinearGradient(x, 0, x + 80, 30);
+  grad.addColorStop(0, "rgba(255, 255, 255, 0)");
+  grad.addColorStop(0.5, "rgba(255, 255, 255, 0.95)");
+  grad.addColorStop(1, "rgba(255, 255, 255, 0)");
+  return grad;
+}
+
+function paintSparks(g, now) {
+  g.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  g.lineWidth = 0.8;
+  SPARKS.forEach(function (s) {
+    g.fillStyle = s[4];
+    // Eased like the CSS twinkle: dim and small, then full, then back.
+    const wave = reduceMotion ? 1 : 0.5 - 0.5 * Math.cos(2 * Math.PI * (now / 1800 + s[3]));
+    const r = s[2] * (0.25 + 0.75 * wave);
+    g.globalAlpha = 0.1 + 0.9 * wave;
+    g.beginPath();
+    g.moveTo(s[0], s[1] - r);
+    g.quadraticCurveTo(s[0], s[1], s[0] + r, s[1]);
+    g.quadraticCurveTo(s[0], s[1], s[0], s[1] + r);
+    g.quadraticCurveTo(s[0], s[1], s[0] - r, s[1]);
+    g.quadraticCurveTo(s[0], s[1], s[0], s[1] - r);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  });
+  g.globalAlpha = 1;
+}
+
+function paintTitle(now) {
+  const g = titleCanvas.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, titleCanvas.width, titleCanvas.height);
+  g.drawImage(titleEdge, 0, 0);
+  titleInk(g);
+  g.fillStyle = holoFill(g, now);
+  eachTitleLine(function (text, y) { g.fillText(text, TITLE_VIEW_W / 2, y); });
+  if (!reduceMotion) {
+    g.fillStyle = sheenFill(g, now);
+    eachTitleLine(function (text, y) { g.fillText(text, TITLE_VIEW_W / 2, y); });
+  }
+  paintSparks(g, now);
+  titleTex.needsUpdate = true;
+}
+
+function buildTitle() {
+  titleCanvas = document.createElement("canvas");
+  titleCanvas.width = TITLE_VIEW_W * TITLE_SCALE;
+  titleCanvas.height = TITLE_VIEW_H * TITLE_SCALE;
+  titleEdge = document.createElement("canvas");
+  titleEdge.width = titleCanvas.width;
+  titleEdge.height = titleCanvas.height;
+  titleTex = new THREE.CanvasTexture(titleCanvas);
+  titleTex.colorSpace = THREE.SRGBColorSpace;
+  titleTex.anisotropy = 4;
+}
+
+function setTitle(line1, line2, bright) {
+  titleLines = [line1 || "", line2 || ""];
+  titleBright = !!bright;
+  const paint = function () {
+    paintTitleEdge();
+    paintTitle(performance.now());
+  };
+  paint();
+  // The first paint can land before the sticker font has loaded.
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load(TITLE_FONT, titleLines.join("")).then(paint, function () {});
+  }
+}
+
 function setStickers(list) {
   while (stickerGroup.children.length) {
     const mesh = stickerGroup.children[0];
@@ -256,21 +464,32 @@ function setStickers(list) {
     mesh.geometry.dispose();
     mesh.material.dispose();
   }
+  titleShown = false;
   (list || []).forEach(function (place) {
     if (place.kind !== "mesh") return;
+    const isTitle = place.dayId === TITLE_ID;
     const mat = new THREE.MeshBasicMaterial({
-      map: stickerTexture(place.dayId),
+      map: isTitle ? titleTex : stickerTexture(place.dayId),
+      // Tone mapping washes the rainbow out to pastel.
+      toneMapped: !isTitle,
       transparent: true,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,
     });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(86, 94), mat);
+    const mesh = new THREE.Mesh(
+      isTitle ? new THREE.PlaneGeometry(TITLE_W, TITLE_H) : new THREE.PlaneGeometry(86, 94),
+      mat
+    );
     const n = new THREE.Vector3(place.nx || 0, place.ny || 0, place.nz || 1);
     if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
     n.normalize();
     mesh.position.set(place.x, place.y, place.z).add(n.clone().multiplyScalar(8));
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    if (isTitle) {
+      mesh.rotateZ(TITLE_TILT);
+      titleShown = true;
+    }
     mesh.userData.dayId = place.dayId;
     mesh.renderOrder = 3;
     stickerGroup.add(mesh);
@@ -409,9 +628,11 @@ function bindGestures() {
 
 function frame() {
   requestAnimationFrame(frame);
-  if (anim) stepAnim(performance.now());
+  const now = performance.now();
+  if (anim) stepAnim(now);
   else controls.update();
   updateFacing();
+  if (titleShown && !reduceMotion) paintTitle(now);
   renderer.render(scene, camera);
   cssRenderer.render(cssScene, camera);
 }
@@ -463,6 +684,7 @@ function init() {
   scene.add(rim);
 
   buildPhone(scene);
+  buildTitle();
 
   const cssObject = new CSS3DObject(faceEl);
   cssObject.position.set(0, 0, DEPTH / 2 + 2);
@@ -478,6 +700,9 @@ function init() {
     order: ["teal", "pink", "hot", "green", "purple", "yellow", "blue", "orange", "grey"],
     setColor: setShellColor,
     hitTest: hitTest,
+    hitTitle: hitTitle,
+    titleHome: TITLE_HOME,
+    setTitle: setTitle,
     setStickers: setStickers,
     pickSticker: pickSticker,
     setDragging: function (on) {

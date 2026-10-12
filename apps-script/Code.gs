@@ -11,9 +11,15 @@
  * Monday through Sunday in Pacific time.
  * weekCheckins is this monster week's rows, Monday 8:00am through
  * Sunday, so the page can color each person's figure.
+ * history is every row from the days before today that the left arrow
+ * can reach, so past days show their figures and monster.
  * PhoneColors stores one shell color per person. Stickers stores where
  * each person stuck a defeated monster. defeatedAll is every day all
  * three finished. Redeploy after pasting.
+ * The title sticker is a Stickers row whose day_id is "title". Everyone
+ * has it and it only goes on the front or the back. With no row the page
+ * shows it at the center of the back, so taking it off the phone keeps the
+ * row with kind "tray" instead of deleting it.
  * Passwords are not in this file. Add them under Project Settings → Script
  * properties as PASSWORD_AUNTIE, PASSWORD_SHELBY and PASSWORD_BERNICE.
  * The page sends action "login" to check one, and every save must carry
@@ -24,8 +30,10 @@
 var SPREADSHEET_ID = "1C-1jZF_QivTMigTGrF6MoM_9c_y2q13ByX5Jin6HCMM";
 var TIME_ZONE = "America/Los_Angeles";
 var RESET_HOUR = 8;
+var HISTORY_DAYS = 23;
 var PLAYERS = { p1: "Auntie", p2: "Shelby", p3: "Bernice" };
 var OPTIONS = { leg: true, chest: true, back: true, rest: true };
+var TITLE_ID = "title";
 var COLORS = {
   teal: true, pink: true, hot: true, green: true, purple: true,
   yellow: true, blue: true, orange: true, grey: true,
@@ -109,6 +117,19 @@ function readState_() {
       });
     }
   }
+  var history = [];
+  var oldest = formatIso_(new Date(window.start.getTime() - HISTORY_DAYS * 86400000));
+  Object.keys(groups).sort().forEach(function (id) {
+    if (id < oldest || id >= window.dayId) return;
+    groups[id].forEach(function (row) {
+      history.push({
+        dayId: id,
+        playerId: row.playerId,
+        option: row.option,
+        loggedAt: row.loggedAt,
+      });
+    });
+  });
   return {
     dayId: window.dayId,
     startsAt: window.startsAt,
@@ -117,6 +138,7 @@ function readState_() {
     checkins: groups[window.dayId] || [],
     weekDefeated: defeated,
     weekCheckins: weekCheckins,
+    history: history,
     defeatedAll: defeatedAll,
     phoneColors: readColors_(),
     stickers: readStickers_(),
@@ -164,7 +186,11 @@ function saveSticker_(body) {
   }
   if (kind === "face" && (x < 0 || x > 520 || y < 0 || y > 1040)) return { error: "refused" };
   if (kind === "mesh" && (Math.abs(x) > 900 || Math.abs(y) > 900 || Math.abs(z) > 500)) return { error: "refused" };
-  if (!defeatedDay_(dayId)) return { error: "refused" };
+  if (dayId === TITLE_ID) {
+    if (kind === "mesh" && nz > -0.5) return { error: "refused" };
+  } else if (!defeatedDay_(dayId)) {
+    return { error: "refused" };
+  }
   var sh = stickerSheet_();
   var values = sh.getDataRange().getValues();
   var found = 0;
@@ -187,6 +213,19 @@ function removeSticker_(body) {
   if (!PLAYERS[playerId] || !dayId) return { error: "refused" };
   var sh = stickerSheet_();
   var values = sh.getDataRange().getValues();
+  if (dayId === TITLE_ID) {
+    var found = 0;
+    for (var t = 1; t < values.length; t++) {
+      if (asText_(values[t][0]) === playerId && asText_(values[t][1]) === dayId) {
+        found = t + 1;
+        break;
+      }
+    }
+    var range = sh.getRange(found || sh.getLastRow() + 1, 1, 1, 9);
+    range.setNumberFormat("@");
+    range.setValues([[playerId, dayId, "tray", "0", "0", "0", "0", "0", "0"]]);
+    return readState_();
+  }
   for (var i = values.length - 1; i >= 1; i--) {
     if (asText_(values[i][0]) === playerId && asText_(values[i][1]) === dayId) sh.deleteRow(i + 1);
   }
@@ -251,7 +290,8 @@ function readStickers_() {
     var playerId = asText_(values[i][0]);
     var dayId = asText_(values[i][1]);
     var kind = asText_(values[i][2]);
-    if (!PLAYERS[playerId] || !dayId || (kind !== "face" && kind !== "mesh")) continue;
+    var inTray = kind === "tray" && dayId === TITLE_ID;
+    if (!PLAYERS[playerId] || !dayId || (kind !== "face" && kind !== "mesh" && !inTray)) continue;
     var key = playerId + "|" + dayId;
     if (seen[key]) continue;
     seen[key] = true;

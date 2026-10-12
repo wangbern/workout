@@ -449,32 +449,13 @@
       if (shine[k]) shineRects.push(cellRect(k, origin, "#f8f8f0"));
     });
     var pal = sprite.pal;
-    var ink = pal.outline;
-    var boot = spriteFromRows([
-      "  XXXX ",
-      " XXOOX ",
-      "XXOSSX ",
-      "XXXXXXX",
-      " XXXXX ",
-      " XX  XX",
-    ], { X: ink, O: "#f8c0a0", S: "#e08860" }, 0, 0);
-    var fist = spriteFromRows([
-      " XXXX  ",
-      "XXOOXX ",
-      "XOOSOX ",
-      "XOOXOX ",
-      "XOOSOX ",
-      " XXXXX ",
-    ], { X: ink, O: "#f8d0b8", S: "#e0a888" }, 0, 0);
-    var flameMap = { X: ink, Y: "#f8e040", Z: "#f07820" };
-    var flameRows = [" X ", "XYX", "XZX", " X "];
-    var heat = spriteFromRows(flameRows, flameMap, -100, -8) + spriteFromRows(flameRows, flameMap, -60, 0);
     var shadow = ovalCells(0, 96, 50, 14).map(function (p) {
       return pxRect(p[0], p[1], "#1a220c");
     }).join("");
     var puddle = ovalMarkup(0, 60, 78, 26, pal);
     return (
-      '<svg class="monster-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-150 -158 300 328" shape-rendering="crispEdges" role="img" aria-label="Monster">' +
+      '<svg class="monster-svg" xmlns="http://www.w3.org/2000/svg" viewBox="-150 -158 300 328" shape-rendering="crispEdges" role="img" aria-label="Monster" data-day="' +
+      String(dayId).replace(/[^\w-]/g, "") + '">' +
       '<g class="shadow" opacity="0.4">' +
       shadow +
       "</g>" +
@@ -482,16 +463,8 @@
       bodyRects.join("") +
       '<g class="shimmer" opacity="0">' +
       shineRects.join("") +
-      "</g></g></g></g>" +
-      '<g class="fx fx-kick" opacity="0">' +
-      boot +
-      "</g>" +
-      '<g class="fx fx-punch" opacity="0">' +
-      fist +
-      "</g>" +
-      '<g class="fx fx-heat" opacity="0">' +
-      heat +
-      "</g>" +
+      '</g><g class="fx fx-in"></g></g></g></g>' +
+      '<g class="fx fx-out"></g>' +
       '<g class="drips">' +
       '<rect class="drip" x="-20" y="24" width="' + PX + '" height="' + (PX * 2) + '" fill="' + pal.body + '" opacity="0"/>' +
       '<rect class="drip" x="10" y="24" width="' + PX + '" height="' + (PX * 2) + '" fill="' + pal.body + '" opacity="0"/>' +
@@ -604,9 +577,7 @@
     opts = opts || {};
     var rig = svg.querySelector(".rig");
     var puddle = svg.querySelector(".puddle");
-    svg.querySelectorAll(".fx").forEach(function (fx) {
-      fx.setAttribute("opacity", "0");
-    });
+    clearFx(svg);
     svg.querySelectorAll(".drip").forEach(function (drip) {
       drip.setAttribute("opacity", "0");
     });
@@ -657,13 +628,316 @@
     });
   }
 
-  function showFx(svg, kind) {
+  function clearFx(svg) {
     svg.querySelectorAll(".fx").forEach(function (fx) {
-      fx.setAttribute("opacity", "0");
+      fx.textContent = "";
     });
-    var node = svg.querySelector(".fx-" + kind);
-    if (node) node.setAttribute("opacity", "1");
-    return node;
+  }
+
+  // Attack effects are drawn in the phone case color of whoever checked in.
+  // Each row is light, mid, deep. Keep in step with SHELLS in phone.js.
+  var TINTS = {
+    teal: ["#3ecfc8", "#2aada6", "#1f8f8a"],
+    pink: ["#f7c6d8", "#e8a9c2", "#d489a6"],
+    hot: ["#ff4f93", "#e2367c", "#c2185b"],
+    green: ["#b6e38a", "#8ec86a", "#6eaa4e"],
+    purple: ["#d4c4f2", "#b89ae0", "#9a7ec8"],
+    yellow: ["#ffe58a", "#f0cc62", "#d4b04a"],
+    blue: ["#7ec4f2", "#5ea6d4", "#4f96c2"],
+    orange: ["#ff9f0a", "#e07d12", "#c46a00"],
+    grey: ["#d8d4ce", "#b7b4ae", "#8e8c88"],
+  };
+  var SPARK = "#f8f8f0";
+
+  function tintFor(id) {
+    var row = TINTS[id] || TINTS.blue;
+    return { hi: row[0], mid: row[1], lo: row[2] };
+  }
+
+  function noise(x, y) {
+    var n = Math.imul((x * 73856093) ^ (y * 19349663), 2654435761) >>> 0;
+    return (n % 1000) / 1000;
+  }
+
+  // Effects are plotted in whole cells so they stay on the monster's pixel grid.
+  function fxGrid() {
+    var cells = {};
+    var rank = {};
+    return {
+      put: function (x, y, color, level) {
+        var k = Math.round(x) + "," + Math.round(y);
+        level = level || 0;
+        if (rank[k] != null && rank[k] > level) return;
+        rank[k] = level;
+        cells[k] = color;
+      },
+      markup: function () {
+        return Object.keys(cells).map(function (k) {
+          var parts = k.split(",");
+          return pxRect(parseInt(parts[0], 10) * PX, parseInt(parts[1], 10) * PX, cells[k]);
+        }).join("");
+      },
+    };
+  }
+
+  function star(g, x, y, size, tint) {
+    g.put(x, y, SPARK, 9);
+    for (var i = 1; i <= size; i++) {
+      var color = i === size ? tint.hi : SPARK;
+      g.put(x + i, y, color, 8);
+      g.put(x - i, y, color, 8);
+      g.put(x, y + i, color, 8);
+      g.put(x, y - i, color, 8);
+    }
+  }
+
+  var infoCache = {};
+
+  // Body cells and the shine spot, in the same pixels svgString draws.
+  function spriteInfo(dayId) {
+    if (!dayId) return { cells: [], shine: null, bodyH: 150 };
+    if (infoCache[dayId]) return infoCache[dayId];
+    var traits = traitsFor(dayId);
+    var sprite = buildSprite(traits);
+    var origin = spriteOrigin(sprite.fill);
+    function place(k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      return {
+        cx: x,
+        cy: y,
+        px: origin.left + (x - origin.minX) * PX,
+        py: FEET - (origin.maxY - y + 1) * PX,
+      };
+    }
+    var cells = [];
+    Object.keys(sprite.fill).forEach(function (k) {
+      if (sprite.fill[k] !== sprite.pal.outline) cells.push(place(k));
+    });
+    var shine = sprite.shine.length ? place(sprite.shine[0]) : null;
+    if (!shine) {
+      cells.forEach(function (c) {
+        if (c.cy < 0) return;
+        if (!shine || c.cy < shine.cy || (c.cy === shine.cy && c.cx < shine.cx)) shine = c;
+      });
+    }
+    var mask = MASKS[traits.body] || MASKS.blob;
+    var info = { cells: cells, shine: shine, bodyH: (mask.length + 2) * PX };
+    infoCache[dayId] = info;
+    return info;
+  }
+
+  // One crescent cut from a to b. The bright head sweeps first, then the tail eats it up.
+  function slash(g, ax, ay, bx, by, u, bulge, tint) {
+    if (u <= 0 || u >= 1) return;
+    var head = 1 - Math.pow(1 - Math.min(1, u / 0.4), 3);
+    var tail = u < 0.28 ? 0 : smooth((u - 0.28) / 0.72);
+    var len = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) || 1;
+    var nx = -(by - ay) / len;
+    var ny = (bx - ax) / len;
+    for (var i = 0; i <= 56; i++) {
+      var s = i / 56;
+      if (s < tail || s > head) continue;
+      var arc = Math.sin(s * Math.PI);
+      var half = (0.3 + 1.5 * arc) * (1 - 0.6 * tail);
+      var cx = ax + (bx - ax) * s + nx * bulge * arc;
+      var cy = ay + (by - ay) * s + ny * bulge * arc;
+      for (var w = -half; w <= half; w += 0.5) {
+        var edge = Math.abs(w) / (half || 1);
+        var color = edge < 0.34 ? SPARK : (w * bulge > 0 ? tint.hi : (edge > 0.8 ? tint.lo : tint.mid));
+        g.put(cx + nx * w, cy + ny * w, color, edge < 0.34 ? 3 : 2 - edge);
+      }
+    }
+    if (head < 1) {
+      var tip = bulge * Math.sin(head * Math.PI);
+      star(g, ax + (bx - ax) * head + nx * tip, ay + (by - ay) * head + ny * tip, 2, tint);
+    }
+  }
+
+  var SLICE_SPARKS = [[-9, 5, 0.2], [8, -6, 0.26], [10, 6, 0.46], [-8, -6, 0.52], [0, -1, 0.58], [-11, 0, 0.64], [11, -1, 0.68]];
+
+  function drawSlices(g, t, tint) {
+    slash(g, -12, -11, 11, 9, (t - 0.04) / 0.5, 2.4, tint);
+    slash(g, 12, -11, -11, 9, (t - 0.3) / 0.5, -2.4, tint);
+    SLICE_SPARKS.forEach(function (s) {
+      var u = (t - s[2]) / 0.22;
+      if (u < 0 || u >= 1) return;
+      star(g, s[0], s[1], u > 0.3 && u < 0.7 ? 2 : 1, tint);
+    });
+  }
+
+  function drawBlast(g, t, tint) {
+    if (t < 0.2) {
+      // A shot streaks in from the left before it bursts.
+      var v = t / 0.2;
+      var hx = -16 + 15 * v * v;
+      var trail = [SPARK, SPARK, tint.hi, tint.hi, tint.mid, tint.mid, tint.lo];
+      trail.forEach(function (color, i) {
+        g.put(hx - i, 0, color, 5);
+        if (i < 3) {
+          g.put(hx - i, -1, i ? tint.hi : SPARK, 4);
+          g.put(hx - i, 1, i ? tint.hi : SPARK, 4);
+        }
+      });
+      star(g, hx, 0, 1, tint);
+      return;
+    }
+    var u = Math.min(1, (t - 0.2) / 0.7);
+    if (u >= 1) return;
+    var e = 1 - Math.pow(1 - u, 3);
+    var R = 2 + 10 * e;
+    var thick = 1.7 * (1 - u) + 0.45;
+    var core = u < 0.45 ? 4.6 * (1 - u / 0.45) + (u < 0.12 ? 2 : 0) : 0;
+    for (var y = -15; y <= 15; y++) {
+      for (var x = -15; x <= 15; x++) {
+        var d = Math.sqrt(x * x + y * y);
+        if (d <= core) {
+          g.put(x, y, d > core - 1.1 ? tint.hi : SPARK, 6);
+          continue;
+        }
+        var off = Math.abs(d - R);
+        if (off > thick) continue;
+        if (u > 0.62 && ((x + y) & 1)) continue;
+        if (u > 0.84 && (x & 1)) continue;
+        var color = off < thick * 0.4 ? (u < 0.5 ? SPARK : tint.hi) : (d > R ? tint.lo : tint.mid);
+        g.put(x, y, color, 3);
+      }
+    }
+    if (u < 0.8) {
+      for (var k = 0; k < 8; k++) {
+        var a = k * Math.PI / 4;
+        var reach = (k % 2 ? 3 : 6) * (1 - u);
+        for (var r = R * 0.55; r <= R + reach; r += 0.5) {
+          g.put(Math.cos(a) * r, Math.sin(a) * r, r < R ? SPARK : tint.hi, 4);
+        }
+      }
+    }
+    for (var i = 0; i < 12; i++) {
+      if (u > 0.7 + (i % 4) * 0.08) continue;
+      var ang = i * 0.5236 + 0.3;
+      var dist = 3 + (9 + (i * 7) % 5) * e;
+      var sx = Math.cos(ang) * dist;
+      var sy = Math.sin(ang) * dist + 4 * u * u;
+      if (i % 4 === 0 && u < 0.55) star(g, sx, sy, 1, tint);
+      else g.put(sx, sy, i % 3 === 0 ? SPARK : (i % 3 === 1 ? tint.hi : tint.mid), 5);
+    }
+  }
+
+  var CRUSH = 0.42;
+
+  // Where the block's underside is and how flat the monster is under it.
+  function slamState(raw, before, after, bodyH) {
+    var crushY = FEET - bodyH * CRUSH;
+    var hover = Math.min(-100, FEET - bodyH * before - 30);
+    var out = { yb: hover, scaleY: before, gone: 0, appear: Math.min(1, raw / 0.1) };
+    if (raw < 0.12) return out;
+    if (raw < 0.22) {
+      out.yb = hover - 20 * smooth((raw - 0.12) / 0.1);
+    } else if (raw < 0.38) {
+      var q = (raw - 0.22) / 0.16;
+      out.yb = hover - 20 + (crushY - hover + 20) * q * q;
+      out.scaleY = Math.min(before, (FEET - out.yb) / bodyH);
+    } else if (raw < 0.6) {
+      out.yb = crushY;
+      out.scaleY = CRUSH;
+    } else {
+      var r = (raw - 0.6) / 0.4;
+      out.scaleY = after + (CRUSH - after) * Math.exp(-6 * r) * Math.cos(r * 10);
+      out.yb = FEET - bodyH * out.scaleY - 30 * r;
+      out.gone = Math.min(1, r / 0.6);
+    }
+    return out;
+  }
+
+  function drawBlock(g, t, st, tint) {
+    var b = Math.round(st.yb / PX);
+    var top = b - 8;
+    if (st.gone < 1) {
+      for (var y = top; y < b; y++) {
+        for (var x = -7; x <= 7; x++) {
+          var n = noise(x, y - b);
+          if (n > st.appear || n < st.gone) continue;
+          var rim = x === -7 || x === 7 || y === top || y === b - 1;
+          var color = tint.mid;
+          if (rim) color = OUTLINE;
+          else if (y === top + 1 || x === -6) color = tint.hi;
+          else if (y === b - 2 || x === 6) color = tint.lo;
+          g.put(x, y, color, 4);
+        }
+      }
+      if (st.appear >= 1 && st.gone < 0.4) star(g, 0, b - 4, 2, tint);
+    }
+    if (t >= 0.22 && t < 0.38) {
+      [-5, 0, 5].forEach(function (x, i) {
+        for (var k = 1; k <= 3 + (i % 2) * 2; k++) g.put(x, top - k, k < 3 ? tint.hi : tint.mid, 2);
+      });
+    }
+    if (t >= 0.38 && t < 0.78) {
+      var q = (t - 0.38) / 0.4;
+      var e = 1 - Math.pow(1 - q, 2);
+      [-1, 1].forEach(function (side) {
+        if (q < 0.5) {
+          for (var d = 0; d <= e * 9; d++) {
+            if (d % 2 === 0) g.put(side * (9 + d), 6, d < 3 ? SPARK : tint.mid, 3);
+          }
+        }
+        for (var i = 0; i < 5; i++) {
+          if (q > 0.55 + i * 0.1) continue;
+          var px = side * (8 + e * (3 + i * 1.6));
+          var py = 5 - Math.sin(q * Math.PI) * (1 + (i % 3)) * 1.4;
+          if (i % 2 && q < 0.5) star(g, px, py, 1, tint);
+          else g.put(px, py, i % 2 ? tint.hi : SPARK, 5);
+        }
+      });
+    }
+  }
+
+  // Lava wells up at the shine, then runs down the body and cools.
+  function lavaMarkup(t, info, tint) {
+    var shine = info.shine;
+    if (!shine || t >= 1) return "";
+    var front = Math.min(1, t / 0.7) * 19;
+    var cool = t > 0.72 ? (t - 0.72) / 0.28 : 0;
+    var flick = Math.floor(t * 30);
+    var out = [];
+    info.cells.forEach(function (c) {
+      var dx = c.cx - shine.cx;
+      var dy = c.cy - shine.cy;
+      var run = 0.35 + 1.1 * noise(dx, 7);
+      var arrive = Math.abs(dx) * 1.8 + (dy >= 0 ? dy * run : -dy * 2.6);
+      var age = front - arrive;
+      if (age < 0) return;
+      if (cool && noise(c.cx, c.cy) < cool) return;
+      var color;
+      if (age < 0.9 && !cool) color = SPARK;
+      else if (age < 2.6) color = tint.hi;
+      else if (age < 5.5) color = (c.cx + c.cy + flick) % 3 === 0 ? tint.hi : tint.mid;
+      else color = (c.cx * 3 + c.cy + flick) % 5 === 0 ? tint.mid : tint.lo;
+      out.push(pxRect(c.px, c.py, color));
+    });
+    if (t < 0.24) {
+      var size = t < 0.06 ? 1 : (t < 0.18 ? 2 + (flick % 2) : 1);
+      out.push(pxRect(shine.px, shine.py, SPARK));
+      for (var i = 1; i <= size; i++) {
+        var glow = i === size ? tint.hi : SPARK;
+        out.push(pxRect(shine.px + i * PX, shine.py, glow));
+        out.push(pxRect(shine.px - i * PX, shine.py, glow));
+        out.push(pxRect(shine.px, shine.py + i * PX, glow));
+        out.push(pxRect(shine.px, shine.py - i * PX, glow));
+      }
+    }
+    return out.join("");
+  }
+
+  function drawEmbers(g, t, tint) {
+    for (var i = 0; i < 7; i++) {
+      var u = (t - 0.16 - i * 0.08) / 0.36;
+      if (u < 0 || u >= 1) continue;
+      var x = ((i * 5) % 13) - 6 + Math.sin((u + i) * 5) * 0.8;
+      var y = 2 - u * (9 + (i % 3) * 2);
+      g.put(x, y, u < 0.4 ? SPARK : (u < 0.75 ? tint.hi : tint.mid), 3);
+    }
   }
 
   function play(svg, kind, opts) {
@@ -684,77 +958,71 @@
     }
     if (puddle) puddle.setAttribute("display", "none");
 
-    var fx = showFx(svg, kind);
+    clearFx(svg);
+    var fxOut = svg.querySelector(".fx-out");
+    var fxIn = svg.querySelector(".fx-in");
+    var tint = tintFor(opts.color);
+    var info = spriteInfo(svg.getAttribute("data-day"));
     var drips = Array.prototype.slice.call(svg.querySelectorAll(".drip"));
+    var dripFill = drips.map(function (drip) { return drip.getAttribute("fill"); });
     var shimmer = svg.querySelector(".shimmer");
+    var lastStep = -1;
 
     return tween(duration, function (raw) {
       if (!alive()) return;
       var p = smooth(raw);
+      // The effect redraws 30 times over the attack so it reads as pixel animation.
+      var step = Math.floor(raw * 30);
+      var g = step !== lastStep ? fxGrid() : null;
+      lastStep = step;
+      var t = step / 30;
       if (kind === "kick") {
-        var footX = -160 + 180 * p;
-        var footY = 18 - Math.sin(p * Math.PI) * 42;
-        if (fx) {
-          fx.setAttribute(
-            "transform",
-            "translate(" + footX.toFixed(1) + " " + footY.toFixed(1) + ") rotate(" + (-35 + 55 * p).toFixed(1) + ")"
-          );
-          fx.setAttribute("opacity", String(Math.sin(raw * Math.PI)));
-        }
-        setPose(svg, { scaleY: before, rot: -360 * p, x: 0, y: 0 });
-      } else if (kind === "punch") {
-        var recoil = Math.sin(raw * Math.PI);
-        var fistP = Math.min(1, raw / 0.62);
-        var fistX = -180 + 150 * (1 - Math.pow(1 - fistP, 3));
-        if (fx) {
-          fx.setAttribute("transform", "translate(" + fistX.toFixed(1) + " -6) scale(" + (0.8 + 0.35 * Math.sin(fistP * Math.PI)) + ")");
-          fx.setAttribute("opacity", String(Math.sin(Math.min(1, raw * 1.15) * Math.PI)));
-        }
+        var cutA = raw < 0.16 ? 0 : Math.exp(-(raw - 0.16) * 9);
+        var cutB = raw < 0.42 ? 0 : Math.exp(-(raw - 0.42) * 9);
         setPose(svg, {
           scaleY: before,
+          rot: -14 * cutA + 14 * cutB,
+          x: 12 * cutA - 12 * cutB,
+          y: -8 * (cutA + cutB),
+        });
+        if (g) drawSlices(g, t, tint);
+      } else if (kind === "punch") {
+        var recoil = raw < 0.2 ? 0 : Math.sin(Math.PI * Math.sqrt((raw - 0.2) / 0.8));
+        setPose(svg, {
+          scaleY: before * (1 - 0.1 * recoil),
           x: 42 * recoil,
           y: 0,
           rot: 10 * recoil,
         });
+        if (g) drawBlast(g, t, tint);
       } else if (kind === "slam") {
-        var y;
-        var scaleY;
-        if (raw < 0.4) {
-          var up = 1 - Math.pow(1 - raw / 0.4, 3);
-          y = -86 * up;
-          scaleY = before + 0.08 * up;
-        } else if (raw < 0.68) {
-          var down = (raw - 0.4) / 0.28;
-          down = down * down;
-          y = -86 + 98 * down;
-          scaleY = before + 0.08 + (0.55 - (before + 0.08)) * down;
-        } else {
-          var back = (raw - 0.68) / 0.32;
-          back = 1 - Math.pow(1 - back, 2);
-          y = 12 * (1 - back);
-          scaleY = 0.55 + (after - 0.55) * back;
-        }
-        setPose(svg, { scaleY: scaleY, x: 0, y: y, rot: 0 });
-        if (fx) fx.setAttribute("opacity", "0");
+        setPose(svg, { scaleY: slamState(raw, before, after, info.bodyH).scaleY, x: 0, y: 0, rot: 0 });
+        if (g) drawBlock(g, t, slamState(t, before, after, info.bodyH), tint);
       } else if (kind === "heat") {
         var wobble = Math.sin(raw * Math.PI * 6) * 4;
         var scaleYHeat = before + (after - before) * p;
         setPose(svg, { scaleY: scaleYHeat, x: wobble * 0.4, y: 0, rot: wobble });
-        if (fx) fx.setAttribute("opacity", String(Math.sin(Math.min(1, raw * 1.05) * Math.PI)));
-        if (shimmer) shimmer.setAttribute("opacity", String(0.15 + 0.45 * Math.abs(Math.sin(raw * Math.PI * 5))));
+        if (shimmer) {
+          shimmer.setAttribute("opacity", raw < 0.24 ? String(0.4 + 0.6 * Math.abs(Math.sin(raw * Math.PI * 12))) : "0");
+        }
+        if (g) {
+          drawEmbers(g, t, tint);
+          if (fxIn) fxIn.innerHTML = lavaMarkup(t, info, tint);
+        }
         drips.forEach(function (drip, index) {
-          var u = Math.min(1, Math.max(0, (raw - index * 0.16) / 0.7));
-          drip.setAttribute("y", String(24 + u * 50));
-          drip.setAttribute("opacity", String(Math.sin(u * Math.PI)));
+          var u = Math.min(1, Math.max(0, (raw - 0.2 - index * 0.14) / 0.6));
+          drip.setAttribute("fill", index === 1 ? tint.hi : tint.mid);
+          drip.setAttribute("y", String(24 + Math.round(u * 5) * PX));
+          drip.setAttribute("opacity", u > 0 && u < 1 ? "1" : "0");
         });
       }
+      if (g && fxOut) fxOut.innerHTML = g.markup();
     }, alive).then(function () {
       if (!alive()) return;
-      svg.querySelectorAll(".fx").forEach(function (node) {
-        node.setAttribute("opacity", "0");
-      });
-      drips.forEach(function (drip) {
+      clearFx(svg);
+      drips.forEach(function (drip, index) {
         drip.setAttribute("opacity", "0");
+        drip.setAttribute("fill", dripFill[index]);
       });
       if (shimmer) shimmer.setAttribute("opacity", "0");
       if (!opts.finishing) {

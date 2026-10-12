@@ -32,28 +32,6 @@
     <div class="crest">
       <div class="earpiece" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
       <div class="lens" aria-hidden="true"></div>
-      <h1 class="title-sticker">
-        <svg viewBox="0 0 420 74" width="400" height="70" role="presentation">
-          <defs>
-            <linearGradient id="holo" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="150" y2="28" spreadMethod="repeat">
-              <stop offset="0%" stop-color="#c5ced6"/>
-              <stop offset="14%" stop-color="#f6f3f0"/>
-              <stop offset="28%" stop-color="#e7cfd8"/>
-              <stop offset="44%" stop-color="#f7f8fb"/>
-              <stop offset="58%" stop-color="#c5dce8"/>
-              <stop offset="74%" stop-color="#ddd4e8"/>
-              <stop offset="88%" stop-color="#eef2f5"/>
-              <stop offset="100%" stop-color="#c5ced6"/>
-              <animate attributeName="x1" values="0;150" dur="3.2s" repeatCount="indefinite"/>
-              <animate attributeName="x2" values="150;300" dur="3.2s" repeatCount="indefinite"/>
-            </linearGradient>
-          </defs>
-          <text id="title-edge" class="title-edge" x="210" y="32" text-anchor="middle" aria-hidden="true"></text>
-          <text id="title-edge-2" class="title-edge" x="210" y="60" text-anchor="middle" aria-hidden="true"></text>
-          <text id="title" class="title-fill" x="210" y="32" text-anchor="middle" fill="url(#holo)"></text>
-          <text id="title-2" class="title-fill" x="210" y="60" text-anchor="middle" fill="url(#holo)"></text>
-        </svg>
-      </h1>
     </div>
 
     <div class="bezel">
@@ -67,6 +45,7 @@
             <path d="M2.4 3.2 L14 11.4 L25.6 3.2" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
           </svg>
         </button>
+        <p id="day-label" class="day-label"></p>
 
         <button type="button" id="battery" class="batt-block">
           <span class="batt" aria-hidden="true">
@@ -93,6 +72,12 @@
         <p id="hint" class="hint" hidden></p>
         <p id="monster-name" class="lcd-desc"></p>
         <p id="desc-live" class="sr-only" aria-live="polite"></p>
+
+        <div id="recap-layer" class="recap-layer" hidden>
+          <div id="recap-stage" class="recap-stage"></div>
+          <div id="recap-trio" class="recap-trio" hidden></div>
+          <p id="recap-caption" class="recap-caption" aria-live="polite"></p>
+        </div>
       </div>
     </div>
     </div>
@@ -127,6 +112,7 @@
     </div>
     </div>
     <div id="face-stickers" class="face-stickers"></div>
+    <h1 id="title-sticker" class="title-sticker" hidden></h1>
   </div>
 
   <input id="pw-input" class="pw-input" type="text" maxlength="24" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" tabindex="-1" aria-label="Password">
@@ -146,18 +132,41 @@
         <stop offset="88%" stop-color="#b5cce2"/>
         <stop offset="100%" stop-color="#8eabc8"/>
       </linearGradient>
+      <linearGradient id="holo" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="150" y2="28" spreadMethod="repeat">
+        <stop offset="0%" stop-color="#ff9ec7"/>
+        <stop offset="16%" stop-color="#ffbd94"/>
+        <stop offset="32%" stop-color="#ffe082"/>
+        <stop offset="48%" stop-color="#9fe6b0"/>
+        <stop offset="64%" stop-color="#93d8f5"/>
+        <stop offset="80%" stop-color="#a5b1ff"/>
+        <stop offset="90%" stop-color="#d2a6ff"/>
+        <stop offset="100%" stop-color="#ff9ec7"/>
+        <animate attributeName="x1" values="0;150" dur="3.2s" repeatCount="indefinite"/>
+        <animate attributeName="x2" values="150;300" dur="3.2s" repeatCount="indefinite"/>
+      </linearGradient>
+      <linearGradient id="holo-bright" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="150" y2="28" spreadMethod="repeat">
+        <stop offset="0%" stop-color="#ff3d9a"/>
+        <stop offset="16%" stop-color="#ff8a1f"/>
+        <stop offset="32%" stop-color="#f5c400"/>
+        <stop offset="48%" stop-color="#22c96b"/>
+        <stop offset="64%" stop-color="#12b5e8"/>
+        <stop offset="80%" stop-color="#5b6bff"/>
+        <stop offset="90%" stop-color="#b44dff"/>
+        <stop offset="100%" stop-color="#ff3d9a"/>
+        <animate attributeName="x1" values="0;150" dur="3.2s" repeatCount="indefinite"/>
+        <animate attributeName="x2" values="150;300" dur="3.2s" repeatCount="indefinite"/>
+      </linearGradient>
+      <linearGradient id="holo-sheen" gradientUnits="userSpaceOnUse" x1="-120" y1="0" x2="-40" y2="30">
+        <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#fff" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+        <animate attributeName="x1" values="-120;460" dur="2.6s" repeatCount="indefinite"/>
+        <animate attributeName="x2" values="-40;540" dur="2.6s" repeatCount="indefinite"/>
+      </linearGradient>
     </defs>
   </svg>
 
   <div id="lang-group" class="sr-only" role="group"></div>
-
-  <div id="recap-layer" class="recap-layer" hidden role="dialog" aria-modal="true" aria-labelledby="recap-caption">
-    <div id="recap-viewport" class="recap-viewport">
-      <button type="button" id="recap-close" class="recap-close">Close</button>
-      <div id="recap-stage" class="recap-stage"></div>
-      <p id="recap-caption" class="recap-caption" aria-live="polite"></p>
-    </div>
-  </div>
 
   <script src="config.js"></script>
   <script src="day.js"></script>
