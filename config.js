@@ -6,8 +6,8 @@
 // anchor is Pacific Time and the other clock is China.
 window.MONSTER_CONFIG = {
   players: [
-    { id: "p1", en: "Liping", zh: "立平", zone: "B" },
-    { id: "p2", en: "Shelby", zh: "Shelby", zone: "A" },
+    { id: "p1", en: " Liping ", zh: "  立平  ", zone: "B" },
+    { id: "p2", en: " Shelby ", zh: " Shelby ", zone: "A" },
     { id: "p3", en: "Bernice", zh: "Bernice", zone: "A" },
   ],
   timezoneA: "America/Los_Angeles",
