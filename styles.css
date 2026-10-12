@@ -90,6 +90,12 @@ button:disabled { cursor: default; }
 #phone-face button,
 #phone-face button * { pointer-events: auto !important; }
 
+#phone-face { position: relative; }
+
+#phone-face .face-stickers { pointer-events: none !important; }
+#phone-face .stuck-face,
+#phone-face .stuck-face * { pointer-events: auto !important; }
+
 body.no-3d { overflow: auto; }
 body.no-3d #view { display: none; }
 body.no-3d #phone-face {
@@ -968,4 +974,159 @@ body.no-3d #phone-face {
   .mail:not(:disabled) { animation: none; filter: drop-shadow(0 0 6px #ffe14a); }
   .lcd-desc::after { animation: none; }
   .option:active, .choice:active, .switch-key:active, .recap-close:active { transform: none; }
+  .sticker-sheen-band { animation: none; }
 }
+
+.decorate-btn {
+  position: fixed;
+  z-index: 8;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.28);
+  color: #1c1730;
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow: 0 10px 24px rgba(70, 40, 110, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  padding: 0;
+}
+
+.decorate-btn[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.decorate-btn img {
+  width: 40px;
+  height: 40px;
+  display: block;
+  pointer-events: none;
+}
+
+.deco-col {
+  position: fixed;
+  z-index: 8;
+  top: calc(12px + env(safe-area-inset-top));
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  width: 68px;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(18px) saturate(1.55);
+  -webkit-backdrop-filter: blur(18px) saturate(1.55);
+  box-shadow: 0 12px 28px rgba(60, 30, 100, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  touch-action: pan-y;
+  scrollbar-width: none;
+}
+
+.deco-col::-webkit-scrollbar { width: 0; height: 0; }
+
+.deco-col[hidden] { display: none !important; }
+.deco-left { left: calc(8px + env(safe-area-inset-left)); }
+.deco-right { right: calc(8px + env(safe-area-inset-right)); }
+
+.swatch {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 10px rgba(50, 20, 80, 0.12);
+}
+
+.swatch.is-on {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 14px rgba(255, 255, 255, 0.55);
+}
+
+.sticker-btn,
+.stuck-face {
+  width: 54px;
+  height: 60px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  touch-action: none;
+}
+
+.stuck-face {
+  position: absolute;
+  width: 72px;
+  height: 80px;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+}
+
+.face-stickers {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.sticker-holo {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  filter: drop-shadow(0 2px 3px rgba(40, 20, 70, 0.16));
+}
+
+.sticker-svg { width: 100%; height: 100%; display: block; }
+
+.sticker-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-mode: alpha;
+  mask-mode: alpha;
+}
+
+.sticker-sheen-band {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.15) 36%, rgba(255, 255, 255, 0.9) 50%, rgba(186, 230, 255, 0.55) 62%, transparent 100%);
+  mix-blend-mode: screen;
+  animation: sticker-holo 2.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes sticker-holo {
+  from { transform: translateX(0); }
+  to { transform: translateX(380%); }
+}
+
+.sticker-ghost {
+  position: fixed;
+  z-index: 20;
+  width: 72px;
+  height: 80px;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.sticker-ghost[hidden] { display: none !important; }

@@ -30,6 +30,23 @@
     recapClose: { en: "Close", zh: "关闭" },
     recapEmpty: { en: "No monsters defeated this week.", zh: "这周没有击败怪物。" },
     sheet: { en: "Sheet connection", zh: "表格连接" },
+    decorate: { en: "Decorate", zh: "装饰" },
+  };
+
+  var PHONE_COLORS = {
+    teal: true, pink: true, hot: true, green: true, purple: true,
+    yellow: true, blue: true, orange: true, grey: true,
+  };
+  var COLOR_NAMES = {
+    teal: { en: "Teal", zh: "青色" },
+    pink: { en: "Light pink", zh: "浅粉" },
+    hot: { en: "Hot pink", zh: "亮粉" },
+    green: { en: "Light green", zh: "浅绿" },
+    purple: { en: "Soft purple", zh: "淡紫" },
+    yellow: { en: "Soft yellow", zh: "浅黄" },
+    blue: { en: "Baby blue", zh: "婴儿蓝" },
+    orange: { en: "Orange", zh: "橙色" },
+    grey: { en: "Moon grey", zh: "月灰" },
   };
 
   var OPTION_IDS = ["leg", "chest", "back", "rest"];
@@ -45,6 +62,9 @@
   var savedUntil = 0;
   var saveSeq = 0;
   var writes = 0;
+  var decorWrites = 0;
+  var decorateOpen = false;
+  var drag = null;
   var writeChain = Promise.resolve();
   var polling = false;
   var animGen = 0;
@@ -107,6 +127,11 @@
     recapClose: document.getElementById("recap-close"),
     recapStage: document.getElementById("recap-stage"),
     recapCaption: document.getElementById("recap-caption"),
+    decorate: document.getElementById("decorate"),
+    colorCol: document.getElementById("color-col"),
+    stickerCol: document.getElementById("sticker-col"),
+    ghost: document.getElementById("sticker-ghost"),
+    faceStickers: document.getElementById("face-stickers"),
   };
 
   function storageGet(key) {
@@ -253,6 +278,55 @@
         if (typeof id === "string" && id) weekDefeated.push(id);
       });
     }
+    var defeatedAll = [];
+    if (Array.isArray(raw.defeatedAll)) {
+      raw.defeatedAll.forEach(function (id) {
+        if (typeof id === "string" && id) defeatedAll.push(id);
+      });
+    } else {
+      var keepDefeated = {};
+      ((state && state.defeatedAll) || []).forEach(function (id) { keepDefeated[id] = true; });
+      weekDefeated.forEach(function (id) { keepDefeated[id] = true; });
+      defeatedAll = Object.keys(keepDefeated);
+    }
+    var phoneColors = [];
+    if (Array.isArray(raw.phoneColors)) {
+      var seenColor = {};
+      raw.phoneColors.forEach(function (row) {
+        if (!row || !playerById(row.playerId) || !PHONE_COLORS[row.color] || seenColor[row.playerId]) return;
+        seenColor[row.playerId] = true;
+        phoneColors.push({ playerId: row.playerId, color: row.color });
+      });
+    } else if (state && state.phoneColors) {
+      phoneColors = state.phoneColors.slice();
+    }
+    var stickers = [];
+    if (Array.isArray(raw.stickers)) {
+      var seenSticker = {};
+      raw.stickers.forEach(function (row) {
+        if (!row || !playerById(row.playerId) || typeof row.dayId !== "string" || !row.dayId) return;
+        if (row.kind !== "face" && row.kind !== "mesh") return;
+        var key = row.playerId + "|" + row.dayId;
+        if (seenSticker[key]) return;
+        var place = {
+          playerId: row.playerId,
+          dayId: row.dayId,
+          kind: row.kind,
+          x: Number(row.x),
+          y: Number(row.y),
+          z: Number(row.z),
+          nx: Number(row.nx),
+          ny: Number(row.ny),
+          nz: Number(row.nz),
+        };
+        if (!isFinite(place.x) || !isFinite(place.y) || !isFinite(place.z)) return;
+        if (!isFinite(place.nx) || !isFinite(place.ny) || !isFinite(place.nz)) return;
+        seenSticker[key] = true;
+        stickers.push(place);
+      });
+    } else if (state && state.stickers) {
+      stickers = state.stickers.slice();
+    }
     (raw.checkins || []).forEach(function (c) {
       if (!c || !playerById(c.playerId) || OPTION_IDS.indexOf(c.option) < 0) return;
       if (seen[c.playerId]) return;
@@ -271,6 +345,9 @@
       checkins: checkins,
       weekDefeated: weekDefeated,
       weekCheckins: weekCheckins,
+      defeatedAll: defeatedAll,
+      phoneColors: phoneColors,
+      stickers: stickers,
     };
   }
 
@@ -320,6 +397,9 @@
       checkins: state && state.dayId === w.dayId ? state.checkins : [],
       weekDefeated: (state && state.weekDefeated) || [],
       weekCheckins: state && Array.isArray(state.weekCheckins) ? state.weekCheckins : null,
+      defeatedAll: (state && state.defeatedAll) || [],
+      phoneColors: (state && state.phoneColors) || [],
+      stickers: (state && state.stickers) || [],
       provisional: true,
     };
     if (!state || state.dayId !== next.dayId) {
@@ -514,7 +594,7 @@ function consider(checkins) {
   }
 
   function poll() {
-    if (polling || writes > 0) return;
+    if (polling || writes > 0 || decorWrites > 0) return;
     if (!scriptUrl()) {
       sheetError = true;
       if (!state) showFallback();
@@ -1195,6 +1275,202 @@ function consider(checkins) {
     el.signal.setAttribute("aria-label", t("sheet"));
   }
 
+  function myColor() {
+    var rows = (state && state.phoneColors) || [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].playerId === playerId) return rows[i].color;
+    }
+    return "blue";
+  }
+
+  function myStickers() {
+    return ((state && state.stickers) || []).filter(function (row) {
+      return row.playerId === playerId;
+    });
+  }
+
+  function catalogIds() {
+    var seen = {};
+    var ids = [];
+    function add(id) {
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      ids.push(id);
+    }
+    ((state && state.defeatedAll) || []).forEach(add);
+    ((state && state.weekDefeated) || []).forEach(add);
+    if (state && shownCheckins().length >= CONFIG.players.length) add(state.dayId);
+    ids.sort();
+    return ids;
+  }
+
+  function stickerWrap(dayId) {
+    var svg = window.MonsterArt.stickerSvg(dayId);
+    var maskSvg = svg.replace(/fill="[^"]*"/g, 'fill="#ffffff"');
+    var mask = "url('data:image/svg+xml;charset=utf-8," + encodeURIComponent(maskSvg) + "')";
+    return '<span class="sticker-holo">' + svg +
+      '<span class="sticker-sheen" style="mask-image:' + mask + ';-webkit-mask-image:' + mask + '">' +
+      '<span class="sticker-sheen-band"></span></span></span>';
+  }
+
+  function ensureDecor() {
+    if (!state.stickers) state.stickers = [];
+    if (!state.phoneColors) state.phoneColors = [];
+    if (!state.defeatedAll) state.defeatedAll = [];
+  }
+
+  function setLocalColor(color) {
+    ensureDecor();
+    var found = false;
+    state.phoneColors.forEach(function (row) {
+      if (row.playerId === playerId) {
+        row.color = color;
+        found = true;
+      }
+    });
+    if (!found) state.phoneColors.push({ playerId: playerId, color: color });
+  }
+
+  function setLocalSticker(place) {
+    ensureDecor();
+    state.stickers = state.stickers.filter(function (row) {
+      return !(row.playerId === playerId && row.dayId === place.dayId);
+    });
+    state.stickers.push(place);
+  }
+
+  function clearLocalSticker(dayId) {
+    ensureDecor();
+    state.stickers = state.stickers.filter(function (row) {
+      return !(row.playerId === playerId && row.dayId === dayId);
+    });
+  }
+
+  function decorPost(body) {
+    if (!scriptUrl()) return;
+    decorWrites += 1;
+    request("POST", body).then(function (next) {
+      applyState(next);
+    }).catch(function () {
+      // Keep the color and stickers on this phone. A failed save
+      // should not replace the workout status line.
+    }).finally(function () {
+      decorWrites -= 1;
+    });
+  }
+
+  function renderDecor() {
+    if (drag) return;
+    var shell = window.PhoneShell;
+    if (shell) {
+      shell.setColor(myColor());
+      shell.setStickers(myStickers());
+    }
+    if (el.faceStickers) {
+      el.faceStickers.innerHTML = myStickers().filter(function (row) {
+        return row.kind === "face";
+      }).map(function (row) {
+        return '<button type="button" class="stuck-face" data-day="' + row.dayId +
+          '" style="left:' + row.x + "px;top:" + row.y + 'px">' + stickerWrap(row.dayId) + "</button>";
+      }).join("");
+    }
+    if (!decorateOpen || !el.colorCol || !el.stickerCol) return;
+    var order = shell ? shell.order : ["teal", "pink", "hot", "green", "purple", "yellow", "blue", "orange", "grey"];
+    var swatches = shell ? shell.swatches : {};
+    var current = myColor();
+    el.colorCol.innerHTML = order.map(function (id) {
+      var hex = swatches[id] ? swatches[id][0] : "#7ec4f2";
+      var label = (COLOR_NAMES[id] && (COLOR_NAMES[id][lang] || COLOR_NAMES[id].en)) || id;
+      return '<button type="button" class="swatch' + (id === current ? " is-on" : "") +
+        '" data-color="' + id + '" style="background:' + hex + '" aria-label="' + label +
+        '" aria-pressed="' + (id === current ? "true" : "false") + '"></button>';
+    }).join("");
+    var placed = {};
+    myStickers().forEach(function (row) { placed[row.dayId] = true; });
+    el.stickerCol.innerHTML = catalogIds().filter(function (id) {
+      return !placed[id];
+    }).map(function (id) {
+      return '<button type="button" class="sticker-btn" data-day="' + id + '">' + stickerWrap(id) + "</button>";
+    }).join("");
+  }
+
+  function moveGhost(x, y) {
+    el.ghost.style.transition = "none";
+    el.ghost.style.left = x + "px";
+    el.ghost.style.top = y + "px";
+  }
+
+  function beginDrag(dayId, placed, src, event) {
+    if (!dayId || drag) return;
+    drag = { dayId: dayId, placed: placed, src: src };
+    if (src) src.style.opacity = "0.25";
+    el.ghost.innerHTML = stickerWrap(dayId);
+    el.ghost.hidden = false;
+    moveGhost(event.clientX, event.clientY);
+    if (window.PhoneShell) {
+      window.PhoneShell.setDragging(true);
+      if (placed) {
+        window.PhoneShell.setStickers(myStickers().filter(function (row) {
+          return row.dayId !== dayId;
+        }));
+      }
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function endDrag(event) {
+    if (!drag) return;
+    var info = drag;
+    drag = null;
+    if (info.src) info.src.style.opacity = "";
+    if (window.PhoneShell) window.PhoneShell.setDragging(false);
+    var hit = playerId && window.PhoneShell && window.PhoneShell.hitTest(event.clientX, event.clientY);
+    if (hit) {
+      setLocalSticker({
+        playerId: playerId,
+        dayId: info.dayId,
+        kind: hit.kind,
+        x: hit.x,
+        y: hit.y,
+        z: hit.z,
+        nx: hit.nx,
+        ny: hit.ny,
+        nz: hit.nz,
+      });
+      el.ghost.hidden = true;
+      renderDecor();
+      decorPost({
+        action: "place",
+        playerId: playerId,
+        dayId: info.dayId,
+        kind: hit.kind,
+        x: hit.x,
+        y: hit.y,
+        z: hit.z,
+        nx: hit.nx,
+        ny: hit.ny,
+        nz: hit.nz,
+      });
+      return;
+    }
+    if (info.placed && playerId) clearLocalSticker(info.dayId);
+    renderDecor();
+    var slot = el.stickerCol.querySelector('[data-day="' + info.dayId + '"]');
+    var rect = slot ? slot.getBoundingClientRect() : null;
+    if (!rect || !rect.width) {
+      el.ghost.hidden = true;
+    } else {
+      el.ghost.style.transition = "left 0.34s ease, top 0.34s ease";
+      el.ghost.style.left = (rect.left + rect.width / 2) + "px";
+      el.ghost.style.top = (rect.top + rect.height / 2) + "px";
+      setTimeout(function () { el.ghost.hidden = true; }, 360);
+    }
+    if (info.placed && playerId) {
+      decorPost({ action: "unstick", playerId: playerId, dayId: info.dayId });
+    }
+  }
+
   function render() {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
     document.title = t("title");
@@ -1234,6 +1510,8 @@ function consider(checkins) {
     renderSignal();
     renderStatus();
     syncBrowse();
+    if (el.decorate) el.decorate.setAttribute("aria-label", t("decorate"));
+    renderDecor();
     el.homeStage.hidden = false;
     el.pickStage.hidden = true;
     el.options.hidden = false;
@@ -1289,6 +1567,46 @@ function consider(checkins) {
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && !el.recapLayer.hidden) stopRecap();
   });
+  el.decorate.addEventListener("click", function () {
+    decorateOpen = !decorateOpen;
+    el.decorate.setAttribute("aria-pressed", decorateOpen ? "true" : "false");
+    el.colorCol.hidden = !decorateOpen;
+    el.stickerCol.hidden = !decorateOpen;
+    renderDecor();
+  });
+  el.colorCol.addEventListener("click", function (event) {
+    var btn = event.target.closest("button[data-color]");
+    if (!btn || !playerId) return;
+    var color = btn.getAttribute("data-color");
+    if (!PHONE_COLORS[color]) return;
+    setLocalColor(color);
+    renderDecor();
+    decorPost({ action: "color", playerId: playerId, color: color });
+  });
+  el.stickerCol.addEventListener("pointerdown", function (event) {
+    var btn = event.target.closest(".sticker-btn");
+    if (!btn) return;
+    beginDrag(btn.getAttribute("data-day"), false, btn, event);
+  });
+  el.faceStickers.addEventListener("pointerdown", function (event) {
+    var btn = event.target.closest(".stuck-face");
+    if (!btn) return;
+    beginDrag(btn.getAttribute("data-day"), true, btn, event);
+  });
+  document.addEventListener("pointerdown", function (event) {
+    if (!decorateOpen || drag || !window.PhoneShell) return;
+    if (event.target.closest && event.target.closest("#decorate, .deco-col, .stuck-face, button")) return;
+    var dayId = window.PhoneShell.pickSticker(event.clientX, event.clientY);
+    if (!dayId) return;
+    beginDrag(dayId, true, null, event);
+  }, true);
+  document.addEventListener("pointermove", function (event) {
+    if (!drag) return;
+    moveGhost(event.clientX, event.clientY);
+  });
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
+  window.addEventListener("phone-ready", function () { renderDecor(); });
   el.switchName.addEventListener("click", function () {
     picking = true;
     pickIndex = 0;

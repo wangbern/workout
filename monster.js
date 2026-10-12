@@ -504,6 +504,71 @@
     );
   }
 
+  function stickerSvg(dayId) {
+    var traits = traitsFor(dayId);
+    var sprite = buildSprite(traits);
+    var fill = {};
+    Object.keys(sprite.fill).forEach(function (k) { fill[k] = sprite.fill[k]; });
+    var border = {};
+    Object.keys(fill).forEach(function (k) {
+      if (fill[k] !== sprite.pal.outline) return;
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      var edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(function (d) {
+        return !fill[cellKey(x + d[0], y + d[1])];
+      });
+      if (edge) border[k] = true;
+    });
+    Object.keys(border).forEach(function (k) { fill[k] = "#ffffff"; });
+    var ring = {};
+    Object.keys(fill).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
+        var nk = cellKey(x + d[0], y + d[1]);
+        if (!fill[nk]) ring[nk] = "#ffffff";
+      });
+    });
+    Object.keys(ring).forEach(function (k) { fill[k] = ring[k]; });
+    var minX = 99;
+    var maxX = -99;
+    var minY = 99;
+    var maxY = -99;
+    Object.keys(fill).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    });
+    var rects = [];
+    var glint = [];
+    Object.keys(fill).forEach(function (k) {
+      var parts = k.split(",");
+      var x = parseInt(parts[0], 10);
+      var y = parseInt(parts[1], 10);
+      var px = (x - minX) * PX;
+      var py = (y - minY) * PX;
+      rects.push('<rect x="' + px + '" y="' + py + '" width="' + PX + '" height="' + PX + '" fill="' + fill[k] + '"/>');
+      if ((x + y) % 5 === 0 && fill[k] !== "#ffffff") {
+        glint.push('<rect x="' + px + '" y="' + py + '" width="' + PX + '" height="' + PX + '" fill="#ffffff"/>');
+      }
+    });
+    var w = (maxX - minX + 1) * PX;
+    var h = (maxY - minY + 1) * PX;
+    return (
+      '<svg class="sticker-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + " " + h +
+      '" width="' + w + '" height="' + h + '" shape-rendering="crispEdges" aria-hidden="true">' +
+      rects.join("") +
+      '<g opacity="0.42">' + glint.join("") + "</g>" +
+      "</svg>"
+    );
+  }
+
 
   function scaleFor(restCount) {
     var n = restCount || 0;
@@ -737,6 +802,7 @@
   return {
     traitsFor: traitsFor,
     svgString: svgString,
+    stickerSvg: stickerSvg,
     play: play,
     melt: melt,
     settle: settle,

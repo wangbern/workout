@@ -33,6 +33,30 @@ let homeDist = 2200;
 let anim = null;
 let faceShown = null;
 let posed = false;
+let phone;
+let plastic;
+let sideMat;
+let backMat;
+let shellBody;
+let shellBack;
+let leftBtn;
+let rightBtn;
+let stickerGroup;
+const stickerTex = {};
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+const SHELLS = {
+  teal: ["#3ecfc8", "#1f8f8a", "#2aada6"],
+  pink: ["#f7c6d8", "#d489a6", "#e8a9c2"],
+  hot: ["#ff4f93", "#c2185b", "#e2367c"],
+  green: ["#b6e38a", "#6eaa4e", "#8ec86a"],
+  purple: ["#d4c4f2", "#9a7ec8", "#b89ae0"],
+  yellow: ["#ffe58a", "#d4b04a", "#f0cc62"],
+  blue: ["#7ec4f2", "#4f96c2", "#5ea6d4"],
+  orange: ["#ff9f0a", "#c46a00", "#e07d12"],
+  grey: ["#d8d4ce", "#8e8c88", "#b7b4ae"],
+};
 
 function frontDistance() {
   const vFov = camera.fov * Math.PI / 180;
@@ -63,39 +87,39 @@ function makeShadow() {
 }
 
 function buildPhone(scene) {
-  const phone = new THREE.Group();
-  const plastic = new THREE.MeshPhysicalMaterial({
+  phone = new THREE.Group();
+  plastic = new THREE.MeshPhysicalMaterial({
     color: 0x7ec4f2,
     roughness: 0.24,
     metalness: 0.08,
     clearcoat: 0.9,
     clearcoatRoughness: 0.18,
   });
-  const sideMat = new THREE.MeshPhysicalMaterial({
+  sideMat = new THREE.MeshPhysicalMaterial({
     color: 0x4f96c2,
     roughness: 0.55,
     metalness: 0.04,
     clearcoat: 0.25,
     clearcoatRoughness: 0.45,
   });
-  const backMat = new THREE.MeshPhysicalMaterial({
+  backMat = new THREE.MeshPhysicalMaterial({
     color: 0x5ea6d4,
     roughness: 0.42,
     metalness: 0.08,
     clearcoat: 0.45,
     clearcoatRoughness: 0.28,
   });
-  const body = new THREE.Mesh(
+  shellBody = new THREE.Mesh(
     new RoundedBoxGeometry(FACE_W, FACE_H, DEPTH, 6, 78),
     plastic
   );
-  phone.add(body);
-  const back = new THREE.Mesh(
+  phone.add(shellBody);
+  shellBack = new THREE.Mesh(
     new RoundedBoxGeometry(FACE_W * 0.72, FACE_H * 0.72, 12, 4, 36),
     backMat
   );
-  back.position.set(0, -10, -DEPTH / 2 - 2);
-  phone.add(back);
+  shellBack.position.set(0, -10, -DEPTH / 2 - 2);
+  phone.add(shellBack);
 
   const lens = new THREE.Mesh(
     new THREE.CylinderGeometry(16, 16, 8, 24),
@@ -112,22 +136,151 @@ function buildPhone(scene) {
   phone.add(glass);
 
   const btnX = FACE_W / 2 + SIDE_STICK - BTN_T / 2;
-  const leftBtn = new THREE.Mesh(
+  leftBtn = new THREE.Mesh(
     new RoundedBoxGeometry(BTN_T, LEFT_H, BTN_D, 2, 5),
     sideMat
   );
   leftBtn.position.set(-btnX, LEFT_Y, BTN_Z);
   phone.add(leftBtn);
 
-  const rightBtn = new THREE.Mesh(
+  rightBtn = new THREE.Mesh(
     new RoundedBoxGeometry(BTN_T, RIGHT_H, BTN_D, 2, 5),
     sideMat
   );
   rightBtn.position.set(btnX, RIGHT_Y, BTN_Z);
   phone.add(rightBtn);
 
+  stickerGroup = new THREE.Group();
+  phone.add(stickerGroup);
+
   scene.add(phone);
   scene.add(makeShadow());
+}
+
+function shellTargets() {
+  return [shellBody, shellBack, leftBtn, rightBtn];
+}
+
+function setShellColor(id) {
+  const row = SHELLS[id] || SHELLS.blue;
+  plastic.color.set(row[0]);
+  sideMat.color.set(row[1]);
+  backMat.color.set(row[2]);
+}
+
+function lcdBox() {
+  const lcd = document.querySelector(".lcd");
+  if (!lcd) return null;
+  let x = 0;
+  let y = 0;
+  let node = lcd;
+  while (node && node !== faceEl) {
+    x += node.offsetLeft;
+    y += node.offsetTop;
+    node = node.offsetParent;
+  }
+  return { x: x, y: y, w: lcd.offsetWidth, h: lcd.offsetHeight };
+}
+
+function overlapsScreen(fx, fy) {
+  const box = lcdBox();
+  if (!box) return false;
+  const sticker = { x: fx - 36, y: fy - 39, w: 72, h: 78 };
+  return sticker.x < box.x + box.w && sticker.x + sticker.w > box.x &&
+    sticker.y < box.y + box.h && sticker.y + sticker.h > box.y;
+}
+
+function localHit(clientX, clientY, targets) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(targets, false);
+  return hits.length ? hits[0] : null;
+}
+
+function hitTest(clientX, clientY) {
+  const hit = localHit(clientX, clientY, shellTargets());
+  if (!hit) return null;
+  const localPoint = phone.worldToLocal(hit.point.clone());
+  const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+  const inv = new THREE.Matrix4().copy(phone.matrixWorld).invert();
+  const localNormal = worldNormal.clone().transformDirection(inv);
+  if (localNormal.z > 0.55) {
+    const fx = localPoint.x + FACE_W / 2;
+    const fy = FACE_H / 2 - localPoint.y;
+    if (overlapsScreen(fx, fy)) return null;
+    if (fx < 24 || fy < 24 || fx > FACE_W - 24 || fy > FACE_H - 24) return null;
+    return { kind: "face", x: fx, y: fy, z: 0, nx: 0, ny: 0, nz: 1 };
+  }
+  return {
+    kind: "mesh",
+    x: localPoint.x,
+    y: localPoint.y,
+    z: localPoint.z,
+    nx: localNormal.x,
+    ny: localNormal.y,
+    nz: localNormal.z,
+  };
+}
+
+function stickerTexture(dayId) {
+  if (stickerTex[dayId]) return stickerTex[dayId];
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 176;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  stickerTex[dayId] = tex;
+  const svg = window.MonsterArt.stickerSvg(dayId);
+  const img = new Image();
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  img.onload = function () {
+    const g = canvas.getContext("2d");
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(img, 8, 8, canvas.width - 16, canvas.height - 16);
+    tex.needsUpdate = true;
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+  return tex;
+}
+
+function setStickers(list) {
+  while (stickerGroup.children.length) {
+    const mesh = stickerGroup.children[0];
+    stickerGroup.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  (list || []).forEach(function (place) {
+    if (place.kind !== "mesh") return;
+    const mat = new THREE.MeshBasicMaterial({
+      map: stickerTexture(place.dayId),
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(86, 94), mat);
+    const n = new THREE.Vector3(place.nx || 0, place.ny || 0, place.nz || 1);
+    if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
+    n.normalize();
+    mesh.position.set(place.x, place.y, place.z).add(n.clone().multiplyScalar(8));
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    mesh.userData.dayId = place.dayId;
+    mesh.renderOrder = 3;
+    stickerGroup.add(mesh);
+  });
+}
+
+function pickSticker(clientX, clientY) {
+  const hit = localHit(clientX, clientY, stickerGroup.children);
+  if (!hit || !hit.object.userData) return "";
+  return hit.object.userData.dayId || "";
 }
 
 function ease(t) {
@@ -320,6 +473,18 @@ function init() {
   resize();
   window.addEventListener("resize", resize);
   document.body.classList.add("has-3d");
+  window.PhoneShell = {
+    swatches: SHELLS,
+    order: ["teal", "pink", "hot", "green", "purple", "yellow", "blue", "orange", "grey"],
+    setColor: setShellColor,
+    hitTest: hitTest,
+    setStickers: setStickers,
+    pickSticker: pickSticker,
+    setDragging: function (on) {
+      if (controls && !anim) controls.enabled = !on;
+    },
+  };
+  window.dispatchEvent(new Event("phone-ready"));
   frame();
 }
 
