@@ -2494,6 +2494,17 @@ function consider(checkins) {
     event.preventDefault();
     event.stopPropagation();
   }, true);
+  // A pinch only ever moves the 3D camera. Left to the browser it zooms the
+  // page, and nothing on the page can zoom it back out. iOS ignores
+  // user-scalable=no, so its pinch is refused here.
+  ["gesturestart", "gesturechange", "gestureend"].forEach(function (type) {
+    document.addEventListener(type, function (event) {
+      event.preventDefault();
+    }, { passive: false });
+  });
+  document.addEventListener("touchmove", function (event) {
+    if (event.touches.length > 1) event.preventDefault();
+  }, { passive: false });
   window.addEventListener("phone-ready", function () {
     renderTitle();
     renderDecor();

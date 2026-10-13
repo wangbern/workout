@@ -95,7 +95,8 @@ button:disabled { cursor: default; }
 }
 
 #view, #view * { touch-action: none; }
-#view button, #phone-face button { touch-action: manipulation; }
+/* Not manipulation: that lets a pinch on a button zoom the whole page. */
+#view button, #phone-face button, .decorate-btn { touch-action: none; }
 
 .sr-only {
   position: absolute;
