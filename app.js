@@ -66,6 +66,10 @@
   var playerId = "";
   var state = null;
   var synced = false;
+  // Until the sheet first answers (or fails), the phone is a grey shell with
+  // static on its screen, so no one sees a color that is not theirs.
+  var booting = true;
+  var bootTimer = 0;
   var sheetError = false;
   var offsetMs = 0;
   var slipUntil = 0;
@@ -156,6 +160,9 @@
     stickerCol: document.getElementById("sticker-col"),
     ghost: document.getElementById("sticker-ghost"),
     faceStickers: document.getElementById("face-stickers"),
+    face: document.getElementById("phone-face"),
+    boot: document.getElementById("boot"),
+    bootNoise: document.getElementById("boot-noise"),
   };
 
   function storageGet(key) {
@@ -444,6 +451,77 @@
     });
   }
 
+  // TV static, with a brighter band rolling down it. Most of the grain is
+  // a dusky mauve with a few bright specks. Red, green and blue are each a
+  // frame behind the last and pulled apart sideways, so the specks and the
+  // band fringe in pink, lime and cyan.
+  var NOISE_SHIFT = 3;
+  var noiseFrames = [];
+  var noiseAt = 0;
+
+  function paintNoise() {
+    var canvas = el.bootNoise;
+    var g = canvas.getContext("2d");
+    var w = canvas.width;
+    var h = canvas.height;
+    var x;
+    var y;
+    if (!noiseFrames.length) {
+      for (var k = 0; k < 3; k++) noiseFrames.push(new Uint8ClampedArray(w * h));
+    }
+    noiseAt = (noiseAt + 1) % 3;
+    var lum = noiseFrames[noiseAt];
+    var band = (Date.now() / 7) % (h + 48) - 24;
+    for (y = 0; y < h; y++) {
+      // The band is brightest in its middle and fades out either side.
+      var off = Math.abs(y - band) / 18;
+      var lift = off < 1 ? 90 * (1 - off * off) : 0;
+      for (x = 0; x < w; x++) {
+        var r = Math.random();
+        lum[y * w + x] = 255 * r * r * r + lift;
+      }
+    }
+    var red = lum;
+    var green = noiseFrames[(noiseAt + 2) % 3];
+    var blue = noiseFrames[(noiseAt + 1) % 3];
+    var img = g.createImageData(w, h);
+    var d = img.data;
+    for (y = 0; y < h; y++) {
+      for (x = 0; x < w; x++) {
+        var at = y * w + x;
+        var i = at * 4;
+        d[i] = 100 + 0.8 * red[y * w + Math.max(0, x - NOISE_SHIFT)];
+        d[i + 1] = 84 + 0.95 * green[at];
+        d[i + 2] = 112 + 0.6 * blue[y * w + Math.min(w - 1, x + NOISE_SHIFT)];
+        d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+  }
+
+  function startBoot() {
+    paintNoise();
+    if (!prefersReduced()) bootTimer = setInterval(paintNoise, 85);
+  }
+
+  // The static clears and the real color and stickers fade in.
+  function endBoot() {
+    if (!booting) return;
+    booting = false;
+    el.boot.classList.add("is-done");
+    el.face.classList.add("is-revealing");
+    if (window.PhoneShell) {
+      window.PhoneShell.reveal(myColor());
+      // Swing round to face front, as a double tap does.
+      window.PhoneShell.recenter();
+    }
+    setTimeout(function () {
+      clearInterval(bootTimer);
+      el.boot.hidden = true;
+      el.face.classList.remove("is-revealing");
+    }, 950);
+  }
+
   function showFallback() {
     var now = new Date(Date.now() + offsetMs);
     var w = window.MonsterDay.dayWindow(now, CONFIG.timezoneA, CONFIG.resetHour);
@@ -658,6 +736,7 @@ function consider(checkins) {
       if (mine && mine.option === optimistic.option) optimistic = null;
     }
     scheduleBoundary();
+    endBoot();
     render();
     armStatusTimer();
   }
@@ -666,6 +745,7 @@ function consider(checkins) {
     if (polling || writes > 0 || decorWrites > 0) return;
     if (!scriptUrl()) {
       sheetError = true;
+      endBoot();
       if (!state) showFallback();
       else render();
       return;
@@ -679,6 +759,7 @@ function consider(checkins) {
     }).catch(function () {
       sheetError = true;
       if (!synced) showFallback();
+      endBoot();
       render();
     }).finally(function () {
       polling = false;
@@ -817,7 +898,6 @@ function consider(checkins) {
     el.lcd.classList.toggle("is-password", pwOpen);
     el.lcd.classList.toggle("is-future", future && !picking);
     el.futureMark.hidden = !future || picking;
-    el.replay.disabled = !picking && future && el.recapLayer.hidden;
     el.dayPrev.disabled = !picking && viewOffset <= VIEW_MIN;
     el.dayNext.disabled = !picking && viewOffset >= VIEW_MAX;
     if (viewOffset === 0) {
@@ -955,6 +1035,18 @@ function consider(checkins) {
     ], { duration: 520 });
   }
 
+  // Same hop, smaller, for the "?" on a day that hasn't happened yet.
+  function jumpFuture() {
+    if (prefersReduced() || !el.futureMark.animate) return;
+    el.futureMark.animate([
+      { transform: "translateY(0)", easing: "cubic-bezier(0.2, 0.7, 0.3, 1)" },
+      { transform: "translateY(-12px)", offset: 0.4, easing: "cubic-bezier(0.6, 0, 0.9, 0.5)" },
+      { transform: "translateY(0)", offset: 0.72, easing: "ease-out" },
+      { transform: "translateY(-3px)", offset: 0.86, easing: "ease-in" },
+      { transform: "translateY(0)" },
+    ], { duration: 520 });
+  }
+
   function closePassword() {
     pwSeq += 1;
     pwOpen = false;
@@ -991,14 +1083,21 @@ function consider(checkins) {
       applyState(next);
     }, function (err) {
       if (seq !== pwSeq) return;
+      var wrong = err && err.message === "auth";
       pwBusy = false;
-      pwNote = err && err.message === "auth" ? "pwWrong" : "pwFail";
-      pwNoteUntil = Date.now() + 4000;
+      pwNoteUntil = Date.now() + 3000;
+      setTimeout(renderStatus, 3100);
+      // Phones won't raise the keyboard from here, so a wrong try goes back
+      // to the picker, which shows the note and then asks who again.
+      pwNote = wrong ? "pwWrong" : "pwFail";
+      if (wrong && touchScreen()) {
+        closePassword();
+        return;
+      }
       // Stay on the password screen. If the keyboard is gone, a tap on the
-      // box brings it back; phones won't raise it from here.
+      // box brings it back.
       el.pwInput.value = "";
       render();
-      setTimeout(renderStatus, 4100);
     });
   }
 
@@ -1031,7 +1130,10 @@ function consider(checkins) {
   }
 
   function replayView() {
-    if (viewOffset > 0) return;
+    if (viewOffset > 0) {
+      jumpFuture();
+      return;
+    }
     var day = viewedDay();
     var checks = checkinsForDay(day.dayId).slice();
     var restorePlayers = visualPlayers;
@@ -1109,6 +1211,14 @@ function consider(checkins) {
   function prefersReduced() {
     try {
       return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function touchScreen() {
+    try {
+      return window.matchMedia("(pointer: coarse)").matches;
     } catch (e) {
       return false;
     }
@@ -1913,15 +2023,15 @@ function consider(checkins) {
     if (drag) return;
     var shell = window.PhoneShell;
     if (shell) {
-      shell.setColor(myColor());
-      shell.setStickers(shownStickers());
+      shell.setColor(booting ? "grey" : myColor());
+      shell.setStickers(booting ? [] : shownStickers());
       // The envelope glows in the same plastic as the case.
       var swatch = shell.swatches[myColor()] || shell.swatches.blue;
       el.recap.style.setProperty("--mail-glow", swatch[0]);
       el.recap.style.setProperty("--mail-glow-deep", swatch[1]);
     }
     if (el.faceStickers) {
-      el.faceStickers.innerHTML = myStickers().filter(function (row) {
+      el.faceStickers.innerHTML = (booting ? [] : myStickers()).filter(function (row) {
         return row.kind === "face" && row.dayId !== TITLE_ID;
       }).map(function (row) {
         return '<button type="button" class="stuck-face' + (row.matte ? " is-matte" : "") + '" data-day="' + row.dayId +
@@ -1929,7 +2039,7 @@ function consider(checkins) {
       }).join("");
     }
     var title = titleRow();
-    var onFace = !!title && title.kind === "face";
+    var onFace = !booting && !!title && title.kind === "face";
     el.titleSticker.hidden = !onFace;
     if (onFace) {
       el.titleSticker.style.left = title.x + "px";
@@ -2304,6 +2414,7 @@ function consider(checkins) {
     }
   });
   el.decorate.addEventListener("click", function () {
+    if (booting) return;
     decorateOpen = !decorateOpen;
     el.decorate.setAttribute("aria-pressed", decorateOpen ? "true" : "false");
     el.colorCol.hidden = !decorateOpen;
@@ -2423,6 +2534,7 @@ function consider(checkins) {
   }
   if (!scriptUrl()) sheetError = true;
 
+  startBoot();
   showFallback();
   render();
   poll();

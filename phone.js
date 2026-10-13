@@ -16,6 +16,7 @@ const LEFT_Y = -220;
 const RIGHT_Y = -180;
 const SIDE_STICK = 12;
 const BTN_Z = 32;
+const FACE_Z = DEPTH / 2 + 2;
 
 // The title sticker. It is drawn on a canvas so it can sit on the back.
 // TITLE_W / TITLE_H match the svg in app.js; the canvas is a little taller
@@ -71,6 +72,13 @@ let shellBack;
 let leftBtn;
 let rightBtn;
 let stickerGroup;
+let shellFade = null;
+let stickerAlpha = 1;
+const REVEAL_MS = 900;
+let flatStyle = "";
+let style3d = "";
+let restFrames = 0;
+const restPos = new THREE.Vector3();
 const stickerTex = {};
 const stickerArt = {};
 const STICKER_PAD = 8;
@@ -206,10 +214,52 @@ function shellTargets() {
 }
 
 function setShellColor(id) {
-  const row = SHELLS[id] || SHELLS.blue;
+  const key = SHELLS[id] ? id : "blue";
+  if (shellFade) {
+    // Already fading to this color: let it finish.
+    if (shellFade.id === key) return;
+    shellFade = null;
+    setStickerAlpha(1);
+  }
+  const row = SHELLS[key];
   plastic.color.set(row[0]);
   sideMat.color.set(row[1]);
   backMat.color.set(row[2]);
+}
+
+function setStickerAlpha(a) {
+  stickerAlpha = a;
+  stickerGroup.children.forEach(function (mesh) {
+    mesh.material.opacity = a;
+  });
+}
+
+// The loading shell gives way to the saved color, and the stickers fade in.
+function reveal(id) {
+  const key = SHELLS[id] ? id : "blue";
+  if (reduceMotion) {
+    setShellColor(key);
+    return;
+  }
+  const mats = [plastic, sideMat, backMat];
+  shellFade = {
+    id: key,
+    t0: performance.now(),
+    mats: mats,
+    from: mats.map(function (m) { return m.color.clone(); }),
+    to: SHELLS[key].map(function (hex) { return new THREE.Color(hex); }),
+  };
+  setStickerAlpha(0);
+}
+
+function stepReveal(now) {
+  const t = Math.min(1, (now - shellFade.t0) / REVEAL_MS);
+  const e = ease(t);
+  shellFade.mats.forEach(function (m, i) {
+    m.color.copy(shellFade.from[i]).lerp(shellFade.to[i], e);
+  });
+  setStickerAlpha(e);
+  if (t >= 1) shellFade = null;
 }
 
 function lcdBox() {
@@ -548,6 +598,7 @@ function setStickers(list) {
       // Tone mapping washes the rainbow out to pastel.
       toneMapped: !isTitle,
       transparent: true,
+      opacity: stickerAlpha,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -605,6 +656,45 @@ function glide(dir) {
 
 function recenter() {
   glide(toDir);
+}
+
+// Square on and at rest, the 3D transform on the face comes to a plain
+// scale. Through the 3D one the browser draws the face full size and shrinks
+// the picture, which leaves the text soft; given the plain scale it draws the
+// face at the size it is shown. Returns "" while the phone is turned or moving.
+function flatTransform() {
+  const q = camera.quaternion;
+  const square = Math.abs(q.x) + Math.abs(q.y) + Math.abs(q.z) < 1e-5;
+  const still = !anim && square && camera.position.distanceToSquared(restPos) < 1e-6;
+  restFrames = still ? restFrames + 1 : 0;
+  restPos.copy(camera.position);
+  if (restFrames < 3) return "";
+  const size = cssRenderer.getSize();
+  const focal = camera.projectionMatrix.elements[5] * size.height / 2;
+  const s = focal / (camera.position.z - FACE_Z);
+  // The scale turns about the middle of the camera element, so that is
+  // taken back out of the shift. The face carries its own flip, as
+  // CSS3DRenderer's camera does.
+  const camEl = faceEl.parentElement;
+  const ox = camEl.offsetWidth / 2;
+  const oy = camEl.offsetHeight / 2;
+  const x = size.width / 2 - camera.position.x * s - ox + s * ox;
+  const y = size.height / 2 + camera.position.y * s - oy - s * oy;
+  return "translate(" + x + "px," + y + "px) scale(" + s + "," + -s + ")";
+}
+
+function renderFace() {
+  const camEl = faceEl.parentElement;
+  const next = flatTransform();
+  if (!next && flatStyle) camEl.style.transform = style3d;
+  cssRenderer.render(cssScene, camera);
+  // A resize makes the renderer write its own transform over the flat one.
+  const theirs = camEl.style.transform.indexOf("perspective") === 0;
+  if (next && (next !== flatStyle || theirs)) {
+    if (theirs) style3d = camEl.style.transform;
+    camEl.style.transform = next;
+  }
+  flatStyle = next;
 }
 
 function setLimits() {
@@ -727,10 +817,11 @@ function frame() {
   if (anim) stepAnim(now);
   else controls.update();
   updateFacing();
+  if (shellFade) stepReveal(now);
   if (titleShown && !reduceMotion) paintTitle(now);
   if (!reduceMotion) paintSheens(now);
   renderer.render(scene, camera);
-  cssRenderer.render(cssScene, camera);
+  renderFace();
 }
 
 const scene = new THREE.Scene();
@@ -783,7 +874,7 @@ function init() {
   buildTitle();
 
   const cssObject = new CSS3DObject(faceEl);
-  cssObject.position.set(0, 0, DEPTH / 2 + 2);
+  cssObject.position.set(0, 0, FACE_Z);
   cssScene.add(cssObject);
   faceEl.style.pointerEvents = "none";
 
@@ -795,6 +886,8 @@ function init() {
     swatches: SHELLS,
     order: ["teal", "pink", "hot", "green", "purple", "yellow", "blue", "orange", "grey"],
     setColor: setShellColor,
+    reveal: reveal,
+    recenter: recenter,
     hitTest: hitTest,
     hitTitle: hitTitle,
     titleHome: TITLE_HOME,

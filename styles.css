@@ -1183,7 +1183,112 @@ body.no-3d .title-sticker {
   transform: translateY(-50%);
 }
 
+/* Over the whole LCD until the sheet first answers: static and three dots. */
+.boot-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: #4a4468;
+  transition: opacity 0.9s ease, filter 0.9s ease;
+}
+
+.boot-layer[hidden] { display: none !important; }
+
+.boot-layer.is-done {
+  opacity: 0;
+  filter: blur(8px);
+}
+
+/* Smoothed, not pixelated, so the grain is soft. */
+.boot-noise {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: saturate(1.25);
+}
+
+/* Neon haze drifting over the static: pink, cyan and light lime. */
+.boot-layer::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  z-index: 1;
+  background:
+    radial-gradient(closest-side at 28% 30%, rgba(255, 110, 210, 0.6), rgba(255, 110, 210, 0) 100%),
+    radial-gradient(closest-side at 74% 72%, rgba(110, 230, 255, 0.5), rgba(110, 230, 255, 0) 100%),
+    radial-gradient(closest-side at 62% 22%, rgba(205, 255, 130, 0.5), rgba(205, 255, 130, 0) 100%),
+    radial-gradient(closest-side at 24% 80%, rgba(205, 255, 130, 0.35), rgba(205, 255, 130, 0) 100%);
+  animation: boot-haze 7s ease-in-out infinite alternate;
+}
+
+/* Faint scan lines and a dusky falloff at the edges. */
+.boot-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    repeating-linear-gradient(180deg, rgba(50, 40, 80, 0.14) 0 1px, rgba(50, 40, 80, 0) 1px 4px),
+    radial-gradient(ellipse at center, rgba(45, 35, 75, 0) 50%, rgba(45, 35, 75, 0.4) 100%);
+}
+
+@keyframes boot-haze {
+  from { transform: translate(-6%, -4%) scale(1); }
+  to { transform: translate(6%, 5%) scale(1.12); }
+}
+
+.boot-dots {
+  position: absolute;
+  z-index: 3;
+  top: 60%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 20px;
+}
+
+.boot-dots i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #ffd3f1;
+  box-shadow: 0 0 10px #ff7ad9, 0 0 24px rgba(255, 122, 217, 0.8);
+  opacity: 0.6;
+  animation: boot-dot 1.2s ease-in-out infinite;
+}
+
+.boot-dots i:nth-child(2) {
+  background: #eeffc4;
+  box-shadow: 0 0 10px #b9f55a, 0 0 24px rgba(185, 245, 90, 0.8);
+  animation-delay: 0.2s;
+}
+
+.boot-dots i:nth-child(3) {
+  background: #d2f6ff;
+  box-shadow: 0 0 10px #6fe3ff, 0 0 24px rgba(111, 227, 255, 0.8);
+  animation-delay: 0.4s;
+}
+
+@keyframes boot-dot {
+  0%, 60%, 100% { opacity: 0.6; transform: none; }
+  30% { opacity: 1; transform: translateY(-12px) scale(1.15); }
+}
+
+/* The saved stickers on the front come in as the static clears. */
+#phone-face.is-revealing .face-stickers,
+#phone-face.is-revealing .title-sticker { animation: boot-fade 0.9s ease both; }
+
+@keyframes boot-fade {
+  from { opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .boot-layer { transition: none; }
+  .boot-layer::before { animation: none; }
+  .boot-dots i { animation: none; opacity: 1; }
+  #phone-face.is-revealing .face-stickers,
+  #phone-face.is-revealing .title-sticker { animation: none; }
   .stage-wrap { animation: none; }
   .mail:not(:disabled):not(.is-seen) { animation: none; filter: drop-shadow(0 0 6px var(--mail-glow, #ffe14a)); }
   .lcd-desc::after { animation: none; }
