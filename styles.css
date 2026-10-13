@@ -584,7 +584,8 @@ body.no-3d .title-sticker {
   color: var(--ink);
 }
 
-.lcd-desc::after {
+.lcd-desc::after,
+.recap-caption.is-typing::after {
   content: "";
   display: inline-block;
   width: 8px;

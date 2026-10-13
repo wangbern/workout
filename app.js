@@ -994,10 +994,9 @@ function consider(checkins) {
       pwBusy = false;
       pwNote = err && err.message === "auth" ? "pwWrong" : "pwFail";
       pwNoteUntil = Date.now() + 4000;
+      // Stay on the password screen. If the keyboard is gone, a tap on the
+      // box brings it back; phones won't raise it from here.
       el.pwInput.value = "";
-      focusPassword();
-      // No keyboard to type a second try with: fall back to the picker.
-      if (document.activeElement !== el.pwInput) pwOpen = false;
       render();
       setTimeout(renderStatus, 4100);
     });
@@ -1251,6 +1250,40 @@ function consider(checkins) {
 
   ];
 
+  // Types the line into the caption the way typeTo types the status line.
+  function recapType(text, gen) {
+    return new Promise(function (resolve) {
+      if (gen !== recapGen) {
+        resolve(false);
+        return;
+      }
+      if (prefersReduced()) {
+        el.recapCaption.textContent = text;
+        resolve(true);
+        return;
+      }
+      var i = 0;
+      el.recapCaption.textContent = "";
+      el.recapCaption.classList.add("is-typing");
+      el.recapCaption.setAttribute("aria-busy", "true");
+      var timer = setInterval(function () {
+        if (gen !== recapGen) {
+          clearInterval(timer);
+          resolve(false);
+          return;
+        }
+        i += 1;
+        el.recapCaption.textContent = text.slice(0, i);
+        if (i >= text.length) {
+          clearInterval(timer);
+          el.recapCaption.classList.remove("is-typing");
+          el.recapCaption.removeAttribute("aria-busy");
+          resolve(true);
+        }
+      }, 28 + Math.min(text.length, 60) * 0.8); // longer lines type more slowly
+    });
+  }
+
   // Closing shot: the trio rises through the screen wearing the week's work.
   function showRecapTrio(gen) {
     var reduce = prefersReduced();
@@ -1267,16 +1300,23 @@ function consider(checkins) {
         "</div>"
       );
     }).join("");
-    el.recapCaption.textContent = RECAP_LINES[Math.floor(Math.random() * RECAP_LINES.length)];
+    var line = RECAP_LINES[Math.floor(Math.random() * RECAP_LINES.length)];
+    // Measure the whole line first so the trio is placed above it, then clear it for typing.
+    el.recapCaption.textContent = line;
     el.recapTrio.hidden = false;
     var view = el.recapLayer.clientHeight || el.lcd.clientHeight;
     var height = el.recapTrio.offsetHeight;
     // Rest a little below the middle of the space above the line, which stays put at the bottom.
     var center = Math.max(0, (view - el.recapCaption.offsetHeight - 10 - height) * 0.68);
+    if (!reduce) el.recapCaption.textContent = "";
     recapTrioPlace(view + 24);
     return recapMove(view + 24, center, reduce ? 20 : 900, gen, recapTrioPlace).then(function (ok) {
       if (!ok) return false;
-      return recapWait(reduce ? 1200 : 2200, gen);
+      return recapType(line, gen);
+    }).then(function (ok) {
+      if (!ok) return false;
+      // Longer lines stay up longer, so there is time to read them.
+      return recapWait((reduce ? 1200 : 2200) + line.length * 30, gen);
     }).then(function (ok) {
       if (!ok) return false;
       return recapMove(center, -height - 24, reduce ? 20 : 900, gen, recapTrioPlace);
@@ -1294,6 +1334,8 @@ function consider(checkins) {
     el.recapTrio.style.transform = "";
     el.recapCaption.textContent = "";
     el.recapCaption.classList.remove("is-empty");
+    el.recapCaption.classList.remove("is-typing");
+    el.recapCaption.removeAttribute("aria-busy");
     render();
   }
 
@@ -2212,11 +2254,28 @@ function consider(checkins) {
   });
   document.addEventListener("pointerdown", function (event) {
     if (!pwOpen || pwBusy) return;
-    if (event.target.closest && event.target.closest("#replay")) return;
+    if (event.target.closest && event.target.closest("#replay, #pw-box")) return;
+    // With the keyboard already gone there is no blur to wait for.
+    if (document.activeElement !== el.pwInput) {
+      setTimeout(function () {
+        if (pwOpen && !pwBusy && document.activeElement !== el.pwInput) closePassword();
+      }, 200);
+      return;
+    }
     pwTappedAway = true;
     el.pwInput.blur();
     pwTappedAway = false;
   }, true);
+  // Tapping the entry box raises the keyboard again, e.g. after a wrong try.
+  el.pwBox.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+  });
+  el.pwBox.addEventListener("click", function () {
+    if (!pwOpen || pwBusy) return;
+    // A field that kept focus while its keyboard was dismissed needs a fresh focus.
+    if (document.activeElement === el.pwInput) el.pwInput.blur();
+    focusPassword();
+  });
   el.recap.addEventListener("click", function () { startRecap(); });
   el.signal.addEventListener("click", function () {
     if (synced && !sheetError && scriptUrl()) return;
