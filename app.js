@@ -928,6 +928,7 @@ function consider(checkins) {
     // The most recent login is remembered, so that person walks back in.
     if (password && chosen.id === playerId) {
       picking = false;
+      viewToday();
       render();
       return;
     }
@@ -937,6 +938,21 @@ function consider(checkins) {
     el.pwInput.value = "";
     render();
     focusPassword();
+    jumpPicked();
+  }
+
+  // The chosen figure hops up and lands back on its spot.
+  function jumpPicked() {
+    if (prefersReduced()) return;
+    var fig = el.figures.querySelector(".figure.is-hot");
+    if (!fig || !fig.animate) return;
+    fig.animate([
+      { transform: "translateY(0)", easing: "cubic-bezier(0.2, 0.7, 0.3, 1)" },
+      { transform: "translateY(-22px)", offset: 0.4, easing: "cubic-bezier(0.6, 0, 0.9, 0.5)" },
+      { transform: "translateY(0)", offset: 0.72, easing: "ease-out" },
+      { transform: "translateY(-5px)", offset: 0.86, easing: "ease-in" },
+      { transform: "translateY(0)" },
+    ], { duration: 520 });
   }
 
   function closePassword() {
@@ -969,6 +985,7 @@ function consider(checkins) {
       pwOpen = false;
       pwBusy = false;
       picking = false;
+      viewToday();
       el.pwInput.value = "";
       el.pwInput.blur();
       applyState(next);
@@ -991,6 +1008,16 @@ function consider(checkins) {
     el.pwBox.classList.toggle("is-busy", pwBusy);
     el.pwText.textContent = el.pwInput.value;
     el.pwInput.setAttribute("aria-label", t("pwLabel"));
+  }
+
+  // Logging in always lands on today, whatever day was being browsed.
+  function viewToday() {
+    if (viewOffset === 0) return;
+    viewOffset = 0;
+    animGen += 1;
+    pendingAnims = 0;
+    animChain = Promise.resolve();
+    monsterDay = "";
   }
 
   function stepDay(delta) {
@@ -1892,6 +1919,17 @@ function consider(checkins) {
     }).join("");
   }
 
+  // The phone backs off to sit between the two columns while they are up.
+  function fitDecor() {
+    if (!window.PhoneShell || !window.PhoneShell.setGutter) return;
+    var px = 0;
+    if (decorateOpen) {
+      px = Math.max(el.colorCol.getBoundingClientRect().right,
+        window.innerWidth - el.stickerCol.getBoundingClientRect().left);
+    }
+    window.PhoneShell.setGutter(px);
+  }
+
   function moveGhost(x, y) {
     el.ghost.style.transition = "none";
     el.ghost.style.left = x + "px";
@@ -2158,18 +2196,26 @@ function consider(checkins) {
       closePassword();
     }
   });
-  // Leaving the keyboard goes back to the picker. The short wait lets a tap
-  // on the circle button submit first.
+  // Leaving the keyboard goes back to the picker, unless the keyboard's own
+  // done button closed it with a password typed: that submits. The short wait
+  // lets a tap on the circle button submit first.
+  var pwTappedAway = false;
   el.pwInput.addEventListener("blur", function () {
+    var tappedAway = pwTappedAway;
+    pwTappedAway = false;
     if (!pwOpen || pwBusy) return;
     setTimeout(function () {
-      if (pwOpen && !pwBusy && document.activeElement !== el.pwInput) closePassword();
+      if (!pwOpen || pwBusy || document.activeElement === el.pwInput) return;
+      if (!tappedAway && el.pwInput.value.trim()) submitPassword();
+      else closePassword();
     }, 200);
   });
   document.addEventListener("pointerdown", function (event) {
     if (!pwOpen || pwBusy) return;
     if (event.target.closest && event.target.closest("#replay")) return;
+    pwTappedAway = true;
     el.pwInput.blur();
+    pwTappedAway = false;
   }, true);
   el.recap.addEventListener("click", function () { startRecap(); });
   el.signal.addEventListener("click", function () {
@@ -2204,6 +2250,7 @@ function consider(checkins) {
     el.colorCol.hidden = !decorateOpen;
     el.stickerCol.hidden = !decorateOpen;
     renderDecor();
+    fitDecor();
   });
   el.colorCol.addEventListener("click", function (event) {
     var btn = event.target.closest("button[data-color]");
@@ -2280,6 +2327,7 @@ function consider(checkins) {
   window.addEventListener("phone-ready", function () {
     renderTitle();
     renderDecor();
+    fitDecor();
   });
   el.switchName.addEventListener("click", function () {
     if (pwOpen) closePassword();

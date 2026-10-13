@@ -58,6 +58,7 @@ let cssRenderer;
 let camera;
 let controls;
 let homeDist = 2200;
+let gutter = 0;
 let anim = null;
 let faceShown = null;
 let posed = false;
@@ -104,7 +105,10 @@ function frontDistance() {
   const pad = 1.16;
   const distH = (FACE_H * pad * 0.5) / Math.tan(vFov / 2);
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
-  const distW = (FACE_W * pad * 0.5) / Math.tan(hFov / 2);
+  // The decorate columns take a strip off each side; fit what is left.
+  const w = view.clientWidth || window.innerWidth;
+  const free = Math.max(0.2, 1 - 2 * gutter / w);
+  const distW = (FACE_W * pad * 0.5) / Math.tan(hFov / 2) / free;
   return Math.max(distH, distW);
 }
 
@@ -577,7 +581,8 @@ function ease(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
-function recenter() {
+// Glides the camera to the home distance, looking from dir.
+function glide(dir) {
   const from = camera.position.clone().sub(controls.target);
   const fromLen = from.length() || homeDist;
   const fromDir = from.multiplyScalar(1 / fromLen);
@@ -585,16 +590,37 @@ function recenter() {
     t0: performance.now(),
     dur: reduceMotion ? 1 : 700,
     fromDir: fromDir.clone(),
+    toDir: dir ? dir.clone() : fromDir.clone(),
     fromLen: fromLen,
     toLen: homeDist,
     fromTarget: controls.target.clone(),
     toTarget: new THREE.Vector3(0, 0, 0),
-    opposite: fromDir.dot(toDir) < -0.9,
+    opposite: !!dir && fromDir.dot(dir) < -0.9,
   };
   controls.enabled = false;
   controls._sphericalDelta.set(0, 0, 0);
   controls._panOffset.set(0, 0, 0);
   camera.up.set(0, 1, 0);
+}
+
+function recenter() {
+  glide(toDir);
+}
+
+function setLimits() {
+  homeDist = frontDistance();
+  controls.minDistance = Math.max(780, homeDist * 0.55);
+  controls.maxDistance = homeDist * 2.4;
+}
+
+// Decorate mode: px is the strip each column covers at the screen edge. The
+// phone backs off to sit between them, keeping whichever way it is turned.
+function setGutter(px) {
+  gutter = Math.max(0, px || 0);
+  const before = homeDist;
+  setLimits();
+  if (Math.abs(homeDist - before) < 1) return;
+  glide(anim ? anim.toDir : null);
 }
 
 function stepAnim(now) {
@@ -603,9 +629,9 @@ function stepAnim(now) {
   let dir;
   if (anim.opposite) {
     if (e < 0.5) dir = anim.fromDir.clone().lerp(sideDir, e * 2);
-    else dir = sideDir.clone().lerp(toDir, (e - 0.5) * 2);
+    else dir = sideDir.clone().lerp(anim.toDir, (e - 0.5) * 2);
   } else {
-    dir = anim.fromDir.clone().lerp(toDir, e);
+    dir = anim.fromDir.clone().lerp(anim.toDir, e);
   }
   if (dir.lengthSq() < 1e-8) dir = sideDir.clone();
   else dir.normalize();
@@ -616,7 +642,7 @@ function stepAnim(now) {
   camera.up.set(0, 1, 0);
   camera.lookAt(target);
   if (t >= 1) {
-    camera.position.set(0, 0, anim.toLen);
+    camera.position.copy(anim.toDir).multiplyScalar(anim.toLen);
     controls.target.set(0, 0, 0);
     camera.up.set(0, 1, 0);
     camera.lookAt(0, 0, 0);
@@ -646,9 +672,7 @@ function resize() {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   cssRenderer.setSize(w, h);
-  homeDist = frontDistance();
-  controls.minDistance = Math.max(780, homeDist * 0.55);
-  controls.maxDistance = homeDist * 2.4;
+  setLimits();
   if (!posed) {
     const yaw = 0.42;
     camera.position.set(Math.sin(yaw) * homeDist, homeDist * 0.035, Math.cos(yaw) * homeDist);
@@ -777,6 +801,7 @@ function init() {
     setTitle: setTitle,
     setStickers: setStickers,
     pickSticker: pickSticker,
+    setGutter: setGutter,
     setDragging: function (on) {
       if (controls && !anim) controls.enabled = !on;
     },

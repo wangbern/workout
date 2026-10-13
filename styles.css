@@ -485,7 +485,7 @@ body.no-3d .title-sticker {
 .anchor-monster {
   position: absolute;
   z-index: 1;
-  left: 74%;
+  left: 79%;
   top: 34%;
   width: 44%;
   transform: translate(-50%, -50%);
@@ -541,7 +541,7 @@ body.no-3d .title-sticker {
 .anchor-figures {
   position: absolute;
   z-index: 2;
-  left: 6%;
+  left: 2%;
   bottom: 56px;
   top: auto;
   width: auto;
@@ -862,7 +862,7 @@ body.no-3d .title-sticker {
 .figure {
   --h: 72px;
   --ar: calc(260 / 358);
-  --slot: 66px;
+  --slot: 82px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -946,16 +946,15 @@ body.no-3d .title-sticker {
 .lcd.is-picking .figure-move { display: none; }
 
 /* Password screen: only the chosen figure stays, with the entry box under it. */
-.lcd.is-password .figures.anchor-figures { top: 44%; }
 .lcd.is-password .figure:not(.is-hot) { visibility: hidden; }
 
 .pw-box {
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: 34px;
+  bottom: 30px;
   width: 62%;
-  height: 36px;
+  height: 30px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
